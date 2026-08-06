@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+REPOSITORY="${SFETCH_REPOSITORY:-https://github.com/Saaransh-Xd/fetch.git}"
+INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
+
+cleanup() {
+    rm -rf "$INSTALL_ROOT"
+}
+trap cleanup EXIT
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "Error: git is required." >&2
+    exit 1
+fi
+if ! command -v make >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+    echo "Error: make and gcc are required." >&2
+    exit 1
+fi
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "Error: sudo is required for a global installation." >&2
+    exit 1
+fi
+
+echo "Cloning $REPOSITORY..."
+git clone --depth 1 "$REPOSITORY" "$INSTALL_ROOT"
+
+echo "Building sfetch..."
+make -C "$INSTALL_ROOT"
+
+echo "Installing binary and logos..."
+sudo install -Dm755 "$INSTALL_ROOT/bin/fetch" /usr/local/bin/sfetch
+sudo install -d -m 755 /usr/local/share/sfetch/assets
+sudo cp -R "$INSTALL_ROOT/assets/ascii" /usr/local/share/sfetch/assets/
+
+sudo install -d -m 755 /etc/sfetch
+if [ ! -e /etc/sfetch/config ]; then
+    sudo tee /etc/sfetch/config >/dev/null <<'CONFIG'
+# sfetch configuration: use true/false to toggle sections.
+logo=true
+header=true
+os=true
+kernel=true
+uptime=true
+cpu=true
+gpu=true
+memory=true
+disks=true
+swap=true
+packages=true
+terminal=true
+local_ip=true
+display=true
+battery=true
+chassis=true
+processes=true
+arch=true
+shell=true
+palette=true
+CONFIG
+    sudo chmod 644 /etc/sfetch/config
+fi
+
+echo "sfetch installed at /usr/local/bin/sfetch"
+echo "Run: sfetch"

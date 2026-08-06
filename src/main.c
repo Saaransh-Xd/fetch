@@ -11,6 +11,7 @@
 #include <sys/sysinfo.h>
 #include <dirent.h>
 #include <sys/statvfs.h>
+#include <sys/stat.h>
 #include <ctype.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
@@ -18,8 +19,109 @@
 
 #include "ansi.h"
 
+typedef struct {
+    int logo;
+    int header;
+    int os;
+    int kernel;
+    int uptime;
+    int cpu;
+    int gpu;
+    int memory;
+    int disks;
+    int swap;
+    int packages;
+    int terminal;
+    int local_ip;
+    int display;
+    int battery;
+    int chassis;
+    int processes;
+    int arch;
+    int shell;
+    int palette;
+} SfetchConfig;
+
 static int colors_enabled(void) {
     return isatty(STDOUT_FILENO) && getenv("NO_COLOR") == NULL;
+}
+
+static char *trim_whitespace(char *value) {
+    char *end;
+    while (isspace((unsigned char)*value)) ++value;
+    end = value + strlen(value);
+    while (end > value && isspace((unsigned char)end[-1])) --end;
+    *end = '\0';
+    return value;
+}
+
+static int parse_toggle(const char *value) {
+    return strcmp(value, "0") != 0 && strcmp(value, "false") != 0 &&
+           strcmp(value, "no") != 0 && strcmp(value, "off") != 0;
+}
+
+static void set_config_value(SfetchConfig *config, const char *key, const char *value) {
+    int enabled = parse_toggle(value);
+    if (strcmp(key, "logo") == 0) config->logo = enabled;
+    else if (strcmp(key, "header") == 0) config->header = enabled;
+    else if (strcmp(key, "os") == 0) config->os = enabled;
+    else if (strcmp(key, "kernel") == 0) config->kernel = enabled;
+    else if (strcmp(key, "uptime") == 0) config->uptime = enabled;
+    else if (strcmp(key, "cpu") == 0) config->cpu = enabled;
+    else if (strcmp(key, "gpu") == 0) config->gpu = enabled;
+    else if (strcmp(key, "memory") == 0) config->memory = enabled;
+    else if (strcmp(key, "disks") == 0) config->disks = enabled;
+    else if (strcmp(key, "swap") == 0) config->swap = enabled;
+    else if (strcmp(key, "packages") == 0) config->packages = enabled;
+    else if (strcmp(key, "terminal") == 0) config->terminal = enabled;
+    else if (strcmp(key, "local_ip") == 0) config->local_ip = enabled;
+    else if (strcmp(key, "display") == 0) config->display = enabled;
+    else if (strcmp(key, "battery") == 0) config->battery = enabled;
+    else if (strcmp(key, "chassis") == 0) config->chassis = enabled;
+    else if (strcmp(key, "processes") == 0) config->processes = enabled;
+    else if (strcmp(key, "arch") == 0) config->arch = enabled;
+    else if (strcmp(key, "shell") == 0) config->shell = enabled;
+    else if (strcmp(key, "palette") == 0) config->palette = enabled;
+}
+
+static void load_config(SfetchConfig *config) {
+    FILE *file;
+    char line[256];
+
+    *config = (SfetchConfig){
+        .logo = 1, .header = 1, .os = 1, .kernel = 1, .uptime = 1,
+        .cpu = 1, .gpu = 1, .memory = 1, .disks = 1, .swap = 1,
+        .packages = 1, .terminal = 1, .local_ip = 1, .display = 1,
+        .battery = 1, .chassis = 1, .processes = 1, .arch = 1,
+        .shell = 1, .palette = 1
+    };
+
+    (void)mkdir("/etc/sfetch", 0755);
+    file = fopen("/etc/sfetch/config", "r");
+    if (!file) {
+        file = fopen("/etc/sfetch/config", "wx");
+        if (file) {
+            fputs("# sfetch configuration: use true/false to toggle sections.\n", file);
+            fputs("logo=true\nheader=true\nos=true\nkernel=true\nuptime=true\n", file);
+            fputs("cpu=true\ngpu=true\nmemory=true\ndisks=true\nswap=true\n", file);
+            fputs("packages=true\nterminal=true\nlocal_ip=true\ndisplay=true\n", file);
+            fputs("battery=true\nchassis=true\nprocesses=true\narch=true\nshell=true\n", file);
+            fputs("palette=true\n", file);
+            fclose(file);
+            file = fopen("/etc/sfetch/config", "r");
+        }
+    }
+    if (!file) return;
+    while (fgets(line, sizeof(line), file)) {
+        char *entry = trim_whitespace(line);
+        char *equals;
+        if (*entry == '\0' || *entry == '#') continue;
+        equals = strchr(entry, '=');
+        if (!equals) continue;
+        *equals = '\0';
+        set_config_value(config, trim_whitespace(entry), trim_whitespace(equals + 1));
+    }
+    fclose(file);
 }
 
 void get_pretty_name(char *buffer, size_t size) {
@@ -331,13 +433,31 @@ static void print_logo(const char *green, const char *cyan, const char *reset,
 
     if (requested_logo && requested_logo[0] != '\0') {
         snprintf(os_id, sizeof(os_id), "%s", requested_logo);
+        logo = NULL;
     } else {
+        logo = fopen("/etc/sfetch/logo", "r");
+        if (logo) {
+            if (fseek(logo, 0, SEEK_END) != 0 || ftell(logo) == 0) {
+                fclose(logo);
+                logo = NULL;
+            } else {
+                rewind(logo);
+            }
+        }
         get_os_id(os_id, sizeof(os_id));
     }
-    if (os_id[0] < 'a' || os_id[0] > 'z') snprintf(os_id, sizeof(os_id), "unknown");
-    snprintf(path, sizeof(path), "assets/ascii/%c/%s.txt", os_id[0], os_id);
-    logo = fopen(path, "r");
-    if (!logo) logo = fopen("assets/ascii/_/unknown.txt", "r");
+    if (!logo) {
+        if (os_id[0] < 'a' || os_id[0] > 'z') snprintf(os_id, sizeof(os_id), "unknown");
+        snprintf(path, sizeof(path), "assets/ascii/%c/%s.txt", os_id[0], os_id);
+        logo = fopen(path, "r");
+        if (!logo) {
+            snprintf(path, sizeof(path), "/usr/local/share/sfetch/assets/ascii/%c/%s.txt",
+                     os_id[0], os_id);
+            logo = fopen(path, "r");
+        }
+        if (!logo) logo = fopen("assets/ascii/_/unknown.txt", "r");
+        if (!logo) logo = fopen("/usr/local/share/sfetch/assets/ascii/_/unknown.txt", "r");
+    }
     if (!logo) return;
 
     while (fgets(line, sizeof(line), logo)) {
@@ -346,6 +466,25 @@ static void print_logo(const char *green, const char *cyan, const char *reset,
     }
     fclose(logo);
     putchar('\n');
+}
+
+static int battery_exists(void) {
+    DIR *directory = opendir("/sys/class/power_supply");
+    struct dirent *entry;
+    char type_path[PATH_MAX];
+    char type[32];
+
+    if (!directory) return 0;
+    while ((entry = readdir(directory)) != NULL) {
+        if (strncmp(entry->d_name, "BAT", 3) != 0) continue;
+        snprintf(type_path, sizeof(type_path), "/sys/class/power_supply/%s/type", entry->d_name);
+        if (read_first_line(type_path, type, sizeof(type)) && strcmp(type, "Battery") == 0) {
+            closedir(directory);
+            return 1;
+        }
+    }
+    closedir(directory);
+    return 0;
 }
 
 static size_t visible_width(const char *line) {
@@ -712,7 +851,9 @@ void print_terminal(void) {
 
 int main(int argc, char **argv)
 {
-    int show_logo = 1;
+    SfetchConfig config;
+    load_config(&config);
+    int show_logo = config.logo;
     const char *requested_logo = NULL;
 
     for (int i = 1; i < argc; ++i) {
@@ -802,17 +943,14 @@ int main(int argc, char **argv)
                 fflush(stdout);
                 dup2(fileno(information_output), STDOUT_FILENO);
             }
-            printf("%s%s%s%s@%s%s\n", green, pw->pw_name, reset,
-                   cyan, hostname, reset);
+            if (config.header) {
+                printf("%s%s%s%s@%s%s\n", green, pw->pw_name, reset,
+                       cyan, hostname, reset);
 
-            size_t len = strlen(pw->pw_name) + strlen(hostname) + 1;
-
-            for (size_t i = 0; i < len; i++)
-            {
-                printf("%s-%s", dim, reset);
+                size_t len = strlen(pw->pw_name) + strlen(hostname) + 1;
+                for (size_t i = 0; i < len; i++) printf("%s-%s", dim, reset);
+                putchar('\n');
             }
-
-            putchar('\n');
 
         if (shell_path == NULL) {
             printf("SHELL environment variable is not set.\n");
@@ -824,39 +962,42 @@ int main(int argc, char **argv)
                 shell_name = shell_name ? shell_name + 1 : shell_path;
             }
 
-            printf("%sOS%s      : %s\n", cyan, reset, os_name);
-            printf("%sKernel%s  : %s\n", cyan, reset, sys.release);
-            printf("%sUptime%s  : %ldd %02ldh %02ldm\n", cyan, reset, days, hours, minutes);
-            if (cpu_mhz > 0)
-                printf("%sCPU%s     : %s (%d) @ %.2f GHz", cyan, reset, cpu_model, cpu_cores, cpu_mhz / 1000.0);
-            else
-                printf("%sCPU%s     : %s (%d)", cyan, reset, cpu_model, cpu_cores);
-            if (cpu_temperature > 0.0) printf(" | %.1f C", cpu_temperature);
-            else printf(" | N/A");
-            putchar('\n');
-            print_gpus();
-            unsigned long ram_used = total_ram - free_ram;
-            unsigned long ram_percentage = total_ram
-                ? (unsigned long)((double)ram_used * 100.0 / total_ram + 0.5)
-                : 0;
-            const char *ram_color = ram_percentage >= 90 ? ANSI_RED :
-                                    ram_percentage >= 75 ? ANSI_YELLOW : ANSI_GREEN;
-            if (!colors_enabled()) ram_color = "";
-            printf("%sMemory%s  : %lu MB / %lu MB (%s%lu%%%s)\n", cyan, reset,
-                   ram_used / 1024 / 1024, total_ram / 1024 / 1024,
-                   ram_color, ram_percentage, reset);
-            print_disks();
-            print_swap();
-            print_packages();
-            print_terminal();
-            print_local_ip(cyan, reset);
-            print_display_info(cyan, reset);
-            int has_battery = print_battery(cyan, reset);
-            print_chassis_type(cyan, reset, has_battery);
-            printf("%sProcesses%s: %d\n", cyan, reset, s_info.procs);
-            printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
-            printf("%sShell%s   : %s\n", cyan, reset, shell_name);
-            printColorPalette();
+            if (config.os) printf("%sOS%s      : %s\n", cyan, reset, os_name);
+            if (config.kernel) printf("%sKernel%s  : %s\n", cyan, reset, sys.release);
+            if (config.uptime) printf("%sUptime%s  : %ldd %02ldh %02ldm\n", cyan, reset, days, hours, minutes);
+            if (config.cpu) {
+                if (cpu_mhz > 0)
+                    printf("%sCPU%s     : %s (%d) @ %.2f GHz", cyan, reset, cpu_model, cpu_cores, cpu_mhz / 1000.0);
+                else
+                    printf("%sCPU%s     : %s (%d)", cyan, reset, cpu_model, cpu_cores);
+                if (cpu_temperature > 0.0) printf(" | %.1f C", cpu_temperature);
+                else printf(" | N/A");
+                putchar('\n');
+            }
+            if (config.gpu) print_gpus();
+            if (config.memory) {
+                unsigned long ram_used = total_ram - free_ram;
+                unsigned long ram_percentage = total_ram
+                    ? (unsigned long)((double)ram_used * 100.0 / total_ram + 0.5) : 0;
+                const char *ram_color = ram_percentage >= 90 ? ANSI_RED :
+                                        ram_percentage >= 75 ? ANSI_YELLOW : ANSI_GREEN;
+                if (!colors_enabled()) ram_color = "";
+                printf("%sMemory%s  : %lu MB / %lu MB (%s%lu%%%s)\n", cyan, reset,
+                       ram_used / 1024 / 1024, total_ram / 1024 / 1024,
+                       ram_color, ram_percentage, reset);
+            }
+            if (config.disks) print_disks();
+            if (config.swap) print_swap();
+            if (config.packages) print_packages();
+            if (config.terminal) print_terminal();
+            if (config.local_ip) print_local_ip(cyan, reset);
+            if (config.display) print_display_info(cyan, reset);
+            int has_battery = config.battery ? print_battery(cyan, reset) : battery_exists();
+            if (config.chassis) print_chassis_type(cyan, reset, has_battery);
+            if (config.processes) printf("%sProcesses%s: %d\n", cyan, reset, s_info.procs);
+            if (config.arch) printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
+            if (config.shell) printf("%sShell%s   : %s\n", cyan, reset, shell_name);
+            if (config.palette) printColorPalette();
 
             if (side_by_side) {
                 fflush(stdout);
