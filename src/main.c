@@ -198,6 +198,8 @@ int main(void)
             long hours = (s_info.uptime % 86400) / 3600;
             long minutes = (s_info.uptime % 3600) / 60;
 
+            char *shell_path = getenv("SHELL");
+
             double loads[3] = {0.0, 0.0, 0.0};
             if (getloadavg(loads, 3) < 0) {
                 loads[0] = loads[1] = loads[2] = 0.0;
@@ -222,6 +224,16 @@ int main(void)
 
             putchar('\n');
 
+        if (shell_path == NULL) {
+            printf("SHELL environment variable is not set.\n");
+        }
+
+            const char *shell_name = "Unknown";
+            if (shell_path) {
+                shell_name = strrchr(shell_path, '/');
+                shell_name = shell_name ? shell_name + 1 : shell_path;
+            }
+
             printf("OS      : %s\n", os_name);
             printf("Kernel  : %s\n", sys.release);
             printf("Uptime  : %ldd %02ldh %02ldm\n", days, hours, minutes);
@@ -233,6 +245,7 @@ int main(void)
             printf("Memory  : %lu MB / %lu MB\n", (total_ram - free_ram) / 1024 / 1024, total_ram / 1024 / 1024);
             printf("Processes: %d\n", s_info.procs);
             printf("Arch    : %s\n", sys.machine);
+            printf("Shell   : %s\n", shell_name);
         }
 
     return 0;
