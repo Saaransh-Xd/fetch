@@ -96,13 +96,22 @@ int main(void)
             unsigned long free_ram = s_info.freeram * s_info.mem_unit;
 
             printf("%s@%s\n", pw->pw_name, hostname);
-            printf("-----------------------------\n");
-            printf("  OS      : %s (%s)\n", os_name, sys.machine);
-            printf("  Kernel  : %s\n", sys.release);
-            printf("  Uptime  : %ldd %02ldh %02ldm\n", days, hours, minutes);
-            printf("  Load    : %.2f %.2f %.2f\n", loads[0], loads[1], loads[2]);
-            printf("  Memory  : %lu MB / %lu MB\n", (total_ram - free_ram) / 1024 / 1024, total_ram / 1024 / 1024);
-            printf("  Processes: %d\n", s_info.procs);
+
+            size_t len = strlen(pw->pw_name) + strlen(hostname) + 1;
+
+            for (size_t i = 0; i < len; i++)
+            {
+                putchar('-');
+            }
+
+            putchar('\n');
+
+            printf("OS      : %s (%s)\n", os_name, sys.machine);
+            printf("Kernel  : %s\n", sys.release);
+            printf("Uptime  : %ldd %02ldh %02ldm\n", days, hours, minutes);
+            printf("Load    : %.2f %.2f %.2f\n", loads[0], loads[1], loads[2]);
+            printf("Memory  : %lu MB / %lu MB\n", (total_ram - free_ram) / 1024 / 1024, total_ram / 1024 / 1024);
+            printf("Processes: %d\n", s_info.procs);
         }
 
     return 0;
