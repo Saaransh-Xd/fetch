@@ -109,7 +109,6 @@ int main(void)
             printf("OS      : %s (%s)\n", os_name, sys.machine);
             printf("Kernel  : %s\n", sys.release);
             printf("Uptime  : %ldd %02ldh %02ldm\n", days, hours, minutes);
-            printf("Load    : %.2f %.2f %.2f\n", loads[0], loads[1], loads[2]);
             printf("Memory  : %lu MB / %lu MB\n", (total_ram - free_ram) / 1024 / 1024, total_ram / 1024 / 1024);
             printf("Processes: %d\n", s_info.procs);
         }
