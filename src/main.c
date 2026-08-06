@@ -12,6 +12,9 @@
 #include <dirent.h>
 #include <sys/statvfs.h>
 #include <ctype.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <net/if.h>
 
 #include "ansi.h"
 
@@ -112,6 +115,138 @@ double get_cpu_mhz(void) {
     return 0.0;
 }
 
+static int read_temperature_file(const char *path, double *temperature) {
+    FILE *file = fopen(path, "r");
+    long millidegrees;
+    int result;
+
+    if (!file) return 0;
+    result = fscanf(file, "%ld", &millidegrees);
+    fclose(file);
+    if (result != 1) return 0;
+
+    *temperature = (double)millidegrees / 1000.0;
+    return 1;
+}
+
+static double get_cpu_temperature(void) {
+    DIR *directory = opendir("/sys/class/thermal");
+    struct dirent *entry;
+    double fallback = 0.0;
+    double temperature;
+
+    if (!directory) return 0.0;
+    while ((entry = readdir(directory)) != NULL) {
+        char type_path[PATH_MAX];
+        char temperature_path[PATH_MAX];
+        char type[64] = "";
+        FILE *type_file;
+
+        if (strncmp(entry->d_name, "thermal_zone", 12) != 0) continue;
+        snprintf(type_path, sizeof(type_path), "/sys/class/thermal/%s/type", entry->d_name);
+        snprintf(temperature_path, sizeof(temperature_path),
+                 "/sys/class/thermal/%s/temp", entry->d_name);
+        type_file = fopen(type_path, "r");
+        if (type_file) {
+            (void)fgets(type, sizeof(type), type_file);
+            fclose(type_file);
+            type[strcspn(type, "\r\n")] = '\0';
+        }
+        if (!read_temperature_file(temperature_path, &temperature)) continue;
+        if (fallback == 0.0) fallback = temperature;
+        if (strstr(type, "cpu") || strstr(type, "x86_pkg") ||
+            strstr(type, "coretemp") || strstr(type, "k10temp")) {
+            closedir(directory);
+            return temperature;
+        }
+    }
+    closedir(directory);
+    return fallback;
+}
+
+static double get_gpu_temperature(const char *card_name) {
+    char hwmon_path[PATH_MAX];
+    DIR *directory;
+    struct dirent *entry;
+    double temperature;
+
+    snprintf(hwmon_path, sizeof(hwmon_path), "/sys/class/drm/%s/device/hwmon", card_name);
+    directory = opendir(hwmon_path);
+    if (!directory) return 0.0;
+    while ((entry = readdir(directory)) != NULL) {
+        char temperature_path[PATH_MAX];
+        if (strncmp(entry->d_name, "hwmon", 5) != 0) continue;
+        if (snprintf(temperature_path, sizeof(temperature_path), "%s/%s/temp1_input",
+                     hwmon_path, entry->d_name) >= (int)sizeof(temperature_path))
+            continue;
+        if (read_temperature_file(temperature_path, &temperature)) {
+            closedir(directory);
+            return temperature;
+        }
+    }
+    closedir(directory);
+    return 0.0;
+}
+
+static void print_local_ip(const char *cyan, const char *reset) {
+    struct ifaddrs *interfaces;
+    struct ifaddrs *interface;
+    char address[INET_ADDRSTRLEN];
+    int printed = 0;
+
+    printf("%sLocal IP%s: ", cyan, reset);
+    if (getifaddrs(&interfaces) != 0) {
+        printf("Unknown\n");
+        return;
+    }
+
+    for (interface = interfaces; interface != NULL; interface = interface->ifa_next) {
+        struct sockaddr_in *ipv4;
+        if (!interface->ifa_addr || interface->ifa_addr->sa_family != AF_INET ||
+            (interface->ifa_flags & IFF_LOOPBACK) != 0)
+            continue;
+
+        ipv4 = (struct sockaddr_in *)interface->ifa_addr;
+        if (!inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address))) continue;
+        printf("%s%s", printed ? ", " : "", address);
+        printed = 1;
+    }
+    freeifaddrs(interfaces);
+    if (printed) putchar('\n');
+    else printf("Unknown\n");
+}
+
+static void print_display_info(const char *cyan, const char *reset) {
+    FILE *display_command = popen("xrandr --current 2>/dev/null", "r");
+    char line[512];
+    int width = 0, height = 0;
+    double refresh = 0.0;
+
+    if (display_command) {
+        while (fgets(line, sizeof(line), display_command)) {
+            char *connected = strstr(line, " connected");
+            if (!connected) continue;
+            for (char *position = connected; *position != '\0'; ++position) {
+                int candidate_width, candidate_height;
+                if (sscanf(position, "%dx%d", &candidate_width, &candidate_height) == 2) {
+                    width = candidate_width;
+                    height = candidate_height;
+                    char *rate_start = strchr(position, ' ');
+                    if (rate_start) refresh = strtod(rate_start, NULL);
+                    break;
+                }
+            }
+            if (width > 0) break;
+        }
+        (void)pclose(display_command);
+    }
+
+    if (width > 0 && height > 0 && refresh > 0.0)
+        printf("%sDisplay%s  : %dx%d @ %.0f Hz\n", cyan, reset, width, height, refresh);
+    else
+        printf("%sDisplay%s  : Unknown\n", cyan, reset);
+}
+
 void print_gpus(void) {
     DIR *dir = opendir("/sys/class/drm");
     if (!dir) return;
@@ -157,135 +292,109 @@ void print_gpus(void) {
 
         const char *label_color = colors_enabled() ? ANSI_CYAN : "";
         const char *reset = colors_enabled() ? ANSI_RESET : "";
-        if (driver[0] != '\0')
-            printf("%sGPU%d%s    : %s (%s)\n", label_color, gpu_idx, reset, vendor_name, driver);
+        double temperature = get_gpu_temperature(entry->d_name);
+        if (driver[0] != '\0' && temperature > 0.0)
+            printf("%sGPU%d%s    : %s (%s) | %.1f C\n", label_color, gpu_idx,
+                   reset, vendor_name, driver, temperature);
+        else if (driver[0] != '\0')
+            printf("%sGPU%d%s    : %s (%s) | %s\n", label_color, gpu_idx, reset,
+                   vendor_name, driver, "temperature unavailable");
+        else if (temperature > 0.0)
+            printf("%sGPU%d%s    : %s | %.1f C\n", label_color, gpu_idx, reset,
+                   vendor_name, temperature);
         else
-            printf("%sGPU%d%s    : %s\n", label_color, gpu_idx, reset, vendor_name);
+            printf("%sGPU%d%s    : %s | temperature unavailable\n", label_color,
+                   gpu_idx, reset, vendor_name);
 
         gpu_idx++;
     }
     closedir(dir);
 }
 
-static void trim_newline(char *value) {
-    value[strcspn(value, "\r\n")] = '\0';
-}
+static void unescape_mount_field(char *value) {
+    char *source = value;
+    char *destination = value;
 
-static void trim_spaces(char *value) {
-    char *start = value;
-    while (isspace((unsigned char)*start)) start++;
-    if (start != value) memmove(value, start, strlen(start) + 1);
-
-    size_t length = strlen(value);
-    while (length > 0 && isspace((unsigned char)value[length - 1]))
-        value[--length] = '\0';
-}
-
-static int is_disk_device(const char *name) {
-    /* Keep physical disks, while ignoring partitions and virtual devices. */
-    if (strncmp(name, "loop", 4) == 0 || strncmp(name, "ram", 3) == 0 ||
-        strncmp(name, "zram", 4) == 0 || strncmp(name, "dm-", 3) == 0 ||
-        strncmp(name, "md", 2) == 0 || strncmp(name, "sr", 2) == 0)
-        return 0;
-
-    size_t length = strlen(name);
-    if (length == 0) return 0;
-    if (isdigit((unsigned char)name[length - 1])) {
-        /* nvme0n1 is a disk; nvme0n1p1 is a partition. */
-        if ((length >= 2 && name[length - 2] == 'n') ||
-            strncmp(name, "mmcblk", 6) == 0) return 1;
-        return 0;
+    while (*source != '\0') {
+        if (strncmp(source, "\\040", 4) == 0) {
+            *destination++ = ' ';
+            source += 4;
+        } else if (strncmp(source, "\\011", 4) == 0) {
+            *destination++ = '\t';
+            source += 4;
+        } else if (strncmp(source, "\\134", 4) == 0) {
+            *destination++ = '\\';
+            source += 4;
+        } else {
+            *destination++ = *source++;
+        }
     }
-    return strncmp(name, "sd", 2) == 0 || strncmp(name, "hd", 2) == 0 ||
-           strncmp(name, "vd", 2) == 0 || strncmp(name, "xvd", 3) == 0 ||
-           strncmp(name, "mmcblk", 6) == 0;
+    *destination = '\0';
 }
 
-static int get_disk_usage(const char *disk_name,
-                          unsigned long long *used_bytes,
-                          unsigned long long *total_bytes) {
-    FILE *mounts = fopen("/proc/mounts", "r");
-    if (!mounts) return 0;
+static int is_pseudo_filesystem(const char *filesystem) {
+    static const char *const pseudo_filesystems[] = {
+        "autofs", "cgroup", "cgroup2", "debugfs", "devpts", "devtmpfs",
+        "fusectl", "hugetlbfs", "mqueue", "proc", "pstore", "rootfs",
+        "securityfs", "squashfs", "sysfs", "tmpfs", "tracefs"
+    };
 
-    char device[PATH_MAX], mountpoint[PATH_MAX], filesystem[64];
-    int found = 0;
-    while (fscanf(mounts, "%511s %511s %63s %*s %*d %*d\n",
-                  device, mountpoint, filesystem) == 3) {
-        char expected[PATH_MAX];
-        snprintf(expected, sizeof(expected), "/dev/%s", disk_name);
-        size_t expected_length = strlen(expected);
-        if (strncmp(device, expected, expected_length) != 0) continue;
-
-        char next = device[expected_length];
-        if (next != '\0' && !isdigit((unsigned char)next) && next != 'p') continue;
-
-        struct statvfs stats;
-        if (statvfs(mountpoint, &stats) != 0 || stats.f_blocks == 0) continue;
-        unsigned long long block_size = stats.f_frsize ? stats.f_frsize : stats.f_bsize;
-        *total_bytes = (unsigned long long)stats.f_blocks * block_size;
-        *used_bytes = (unsigned long long)(stats.f_blocks - stats.f_bfree) * block_size;
-        found = 1;
-        break;
-    }
-    fclose(mounts);
-    return found;
+    for (size_t i = 0; i < sizeof(pseudo_filesystems) / sizeof(pseudo_filesystems[0]); ++i)
+        if (strcmp(filesystem, pseudo_filesystems[i]) == 0) return 1;
+    return 0;
 }
 
 void print_disks(void) {
-    DIR *dir = opendir("/sys/block");
-    if (!dir) return;
+    FILE *mounts = fopen("/proc/mounts", "r");
+    if (!mounts) return;
 
-    struct dirent *entry;
-    int disk_index = 0;
-    while ((entry = readdir(dir)) != NULL) {
-        if (!is_disk_device(entry->d_name)) continue;
+    char device[PATH_MAX], mountpoint[PATH_MAX], filesystem[64];
+    const char *cyan = colors_enabled() ? ANSI_CYAN : "";
+    const char *reset = colors_enabled() ? ANSI_RESET : "";
+    char root_device[PATH_MAX] = "";
 
-        char size_path[PATH_MAX];
-        snprintf(size_path, sizeof(size_path), "/sys/block/%s/size", entry->d_name);
-        FILE *size_file = fopen(size_path, "r");
-        unsigned long long sectors = 0;
-        if (size_file) {
-            (void)fscanf(size_file, "%llu", &sectors);
-            fclose(size_file);
+    /* Find the root device first so bind mounts of it are not reported as disks. */
+    while (fscanf(mounts, "%511s %511s %63s %*s %*d %*d\n",
+                  device, mountpoint, filesystem) == 3) {
+        if (strcmp(mountpoint, "/") == 0) {
+            snprintf(root_device, sizeof(root_device), "%s", device);
+            break;
         }
-
-        char model_path[PATH_MAX];
-        snprintf(model_path, sizeof(model_path), "/sys/block/%s/device/model", entry->d_name);
-        char model[128] = "";
-        FILE *model_file = fopen(model_path, "r");
-        if (model_file) {
-            if (fgets(model, sizeof(model), model_file)) trim_newline(model);
-            fclose(model_file);
-        }
-        trim_spaces(model);
-
-        double size_gb = (double)sectors * 512.0 / 1000000000.0;
-        unsigned long long used_bytes = 0, total_bytes = 0;
-        int has_usage = get_disk_usage(entry->d_name, &used_bytes, &total_bytes);
-        const char *cyan = colors_enabled() ? ANSI_CYAN : "";
-        const char *reset = colors_enabled() ? ANSI_RESET : "";
-        const char *model_color = colors_enabled() ? ANSI_DIM : "";
-        if (has_usage) {
-            double used_gb = (double)used_bytes / 1000000000.0;
-            double total_gb = (double)total_bytes / 1000000000.0;
-            double percentage = total_bytes ? (double)used_bytes * 100.0 / total_bytes : 0.0;
-            const char *usage_color = percentage >= 90.0 ? ANSI_RED :
-                                      percentage >= 75.0 ? ANSI_YELLOW : ANSI_GREEN;
-            if (!colors_enabled()) usage_color = "";
-            printf("%sDisk%-2d%s  : %s | %.1f / %.1f GB (%s%.1f%%%s)",
-                   cyan, disk_index, reset, entry->d_name, used_gb, total_gb,
-                   usage_color, percentage, reset);
-        } else {
-            const char *unknown_color = colors_enabled() ? ANSI_YELLOW : "";
-            printf("%sDisk%-2d%s  : %s | N/A / %.1f GB (%sN/A%s)",
-                   cyan, disk_index, reset, entry->d_name, size_gb,
-                   unknown_color, reset);
-        }
-        if (model[0] != '\0') printf(" | %s%s%s", model_color, model, reset);
-        putchar('\n');
-        disk_index++;
     }
-    closedir(dir);
+    rewind(mounts);
+
+    while (fscanf(mounts, "%511s %511s %63s %*s %*d %*d\n",
+                  device, mountpoint, filesystem) == 3) {
+        if (is_pseudo_filesystem(filesystem)) continue;
+        if (strcmp(mountpoint, "/") != 0 && strcmp(device, root_device) == 0)
+            continue;
+        if (strcmp(mountpoint, "/") != 0 &&
+            strncmp(device, "/dev/", 5) != 0 &&
+            !(strcmp(filesystem, "9p") == 0 && strncmp(mountpoint, "/mnt/", 5) == 0))
+            continue;
+
+        unescape_mount_field(mountpoint);
+        struct statvfs stats;
+        if (statvfs(mountpoint, &stats) != 0 || stats.f_blocks == 0) continue;
+
+        unsigned long long block_size = stats.f_frsize ? stats.f_frsize : stats.f_bsize;
+        unsigned long long total_bytes = (unsigned long long)stats.f_blocks * block_size;
+        unsigned long long used_bytes = total_bytes -
+                                        (unsigned long long)stats.f_bfree * block_size;
+        double used_gib = (double)used_bytes / (1024.0 * 1024.0 * 1024.0);
+        double total_gib = (double)total_bytes / (1024.0 * 1024.0 * 1024.0);
+        unsigned long percentage = total_bytes
+            ? (unsigned long)((double)used_bytes * 100.0 / total_bytes + 0.5)
+            : 0;
+        const char *usage_color = percentage >= 90 ? ANSI_RED :
+                                  percentage >= 75 ? ANSI_YELLOW : ANSI_GREEN;
+        if (!colors_enabled()) usage_color = "";
+
+        printf("%sDisk (%s)%s: %.2f GiB / %.2f GiB (%s%lu%%%s) - %s\n",
+               cyan, mountpoint, reset, used_gib, total_gib,
+               usage_color, percentage, reset, filesystem);
+    }
+    fclose(mounts);
 }
 
 void print_swap(void) {
@@ -308,8 +417,15 @@ void print_swap(void) {
 
     const char *label_color = colors_enabled() ? ANSI_CYAN : "";
     const char *reset = colors_enabled() ? ANSI_RESET : "";
-    printf("%sSwap%s    : %llu MB / %llu MB\n", label_color, reset,
-           used_kb / 1024, total_kb / 1024);
+    unsigned long percentage = total_kb
+        ? (unsigned long)((double)used_kb * 100.0 / total_kb + 0.5)
+        : 0;
+    const char *usage_color = percentage >= 90 ? ANSI_RED :
+                              percentage >= 75 ? ANSI_YELLOW : ANSI_GREEN;
+    if (!colors_enabled()) usage_color = "";
+    printf("%sSwap%s    : %llu MB / %llu MB (%s%lu%%%s)\n",
+           label_color, reset, used_kb / 1024, total_kb / 1024,
+           usage_color, percentage, reset);
 }
 
 static unsigned long count_command_lines(const char *command) {
@@ -424,6 +540,7 @@ int main(void)
             get_cpu_model(cpu_model, sizeof(cpu_model));
             int cpu_cores = get_cpu_cores();
             double cpu_mhz = get_cpu_mhz();
+            double cpu_temperature = get_cpu_temperature();
 
             const char *green = colors_enabled() ? ANSI_GREEN : "";
             const char *cyan = colors_enabled() ? ANSI_CYAN : "";
@@ -456,15 +573,29 @@ int main(void)
             printf("%sKernel%s  : %s\n", cyan, reset, sys.release);
             printf("%sUptime%s  : %ldd %02ldh %02ldm\n", cyan, reset, days, hours, minutes);
             if (cpu_mhz > 0)
-                printf("%sCPU%s     : %s (%d) @ %.2f GHz\n", cyan, reset, cpu_model, cpu_cores, cpu_mhz / 1000.0);
+                printf("%sCPU%s     : %s (%d) @ %.2f GHz", cyan, reset, cpu_model, cpu_cores, cpu_mhz / 1000.0);
             else
-                printf("%sCPU%s     : %s (%d)\n", cyan, reset, cpu_model, cpu_cores);
+                printf("%sCPU%s     : %s (%d)", cyan, reset, cpu_model, cpu_cores);
+            if (cpu_temperature > 0.0) printf(" | %.1f C", cpu_temperature);
+            else printf(" | temperature unavailable");
+            putchar('\n');
             print_gpus();
-            printf("%sMemory%s  : %lu MB / %lu MB\n", cyan, reset, (total_ram - free_ram) / 1024 / 1024, total_ram / 1024 / 1024);
+            unsigned long ram_used = total_ram - free_ram;
+            unsigned long ram_percentage = total_ram
+                ? (unsigned long)((double)ram_used * 100.0 / total_ram + 0.5)
+                : 0;
+            const char *ram_color = ram_percentage >= 90 ? ANSI_RED :
+                                    ram_percentage >= 75 ? ANSI_YELLOW : ANSI_GREEN;
+            if (!colors_enabled()) ram_color = "";
+            printf("%sMemory%s  : %lu MB / %lu MB (%s%lu%%%s)\n", cyan, reset,
+                   ram_used / 1024 / 1024, total_ram / 1024 / 1024,
+                   ram_color, ram_percentage, reset);
             print_disks();
             print_swap();
             print_packages();
             print_terminal();
+            print_local_ip(cyan, reset);
+            print_display_info(cyan, reset);
             printf("%sProcesses%s: %d\n", cyan, reset, s_info.procs);
             printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
             printf("%sShell%s   : %s\n", cyan, reset, shell_name);
