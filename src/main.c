@@ -58,6 +58,35 @@ void get_pretty_name(char *buffer, size_t size) {
     snprintf(buffer, size, "Unknown Linux");
 }
 
+static void get_os_id(char *buffer, size_t size) {
+    FILE *file = fopen("/etc/os-release", "r");
+    char line[256];
+
+    if (!file) {
+        snprintf(buffer, size, "unknown");
+        return;
+    }
+    while (fgets(line, sizeof(line), file)) {
+        if (strncmp(line, "ID=", 3) != 0) continue;
+        char *value = line + 3;
+        value[strcspn(value, "\r\n")] = '\0';
+        size_t value_length = strlen(value);
+        if (value_length >= 2 && (*value == '\"' || *value == '\'') &&
+            value[value_length - 1] == *value) {
+            value[value_length - 1] = '\0';
+            ++value;
+        }
+        size_t copy_length = strlen(value);
+        if (copy_length >= size) copy_length = size - 1;
+        memcpy(buffer, value, copy_length);
+        buffer[copy_length] = '\0';
+        fclose(file);
+        return;
+    }
+    fclose(file);
+    snprintf(buffer, size, "unknown");
+}
+
 void get_cpu_model(char *buffer, size_t size) {
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) {
@@ -277,6 +306,88 @@ static int read_first_line(const char *path, char *buffer, size_t size) {
     fclose(file);
     buffer[strcspn(buffer, "\r\n")] = '\0';
     return 1;
+}
+
+static void print_logo_line(const char *line, const char *green, const char *cyan,
+                            const char *reset) {
+    for (size_t i = 0; line[i] != '\0'; ++i) {
+        if (line[i] == '$' && (line[i + 1] == '1' || line[i + 1] == '2')) {
+            fputs(line[i + 1] == '1' ? green : cyan, stdout);
+            ++i;
+        } else {
+            putchar(line[i]);
+        }
+    }
+    fputs(reset, stdout);
+    putchar('\n');
+}
+
+static void print_logo(const char *green, const char *cyan, const char *reset,
+                       const char *requested_logo) {
+    char os_id[64];
+    char path[PATH_MAX];
+    char line[512];
+    FILE *logo;
+
+    if (requested_logo && requested_logo[0] != '\0') {
+        snprintf(os_id, sizeof(os_id), "%s", requested_logo);
+    } else {
+        get_os_id(os_id, sizeof(os_id));
+    }
+    if (os_id[0] < 'a' || os_id[0] > 'z') snprintf(os_id, sizeof(os_id), "unknown");
+    snprintf(path, sizeof(path), "assets/ascii/%c/%s.txt", os_id[0], os_id);
+    logo = fopen(path, "r");
+    if (!logo) logo = fopen("assets/ascii/_/unknown.txt", "r");
+    if (!logo) return;
+
+    while (fgets(line, sizeof(line), logo)) {
+        line[strcspn(line, "\r\n")] = '\0';
+        print_logo_line(line, green, cyan, reset);
+    }
+    fclose(logo);
+    putchar('\n');
+}
+
+static size_t visible_width(const char *line) {
+    size_t width = 0;
+    for (size_t i = 0; line[i] != '\0'; ++i) {
+        if (line[i] == '\033' && line[i + 1] == '[') {
+            i += 2;
+            while (line[i] != '\0' && line[i] != 'm') ++i;
+        } else {
+            ++width;
+        }
+    }
+    return width;
+}
+
+static void print_side_by_side(FILE *logo, FILE *information) {
+    char logo_line[1024];
+    char info_line[2048];
+    int has_logo;
+    int has_information;
+
+    rewind(logo);
+    rewind(information);
+    do {
+        has_logo = fgets(logo_line, sizeof(logo_line), logo) != NULL;
+        has_information = fgets(info_line, sizeof(info_line), information) != NULL;
+        if (!has_logo && !has_information) break;
+
+        if (has_logo) {
+            logo_line[strcspn(logo_line, "\r\n")] = '\0';
+            fputs(logo_line, stdout);
+            size_t width = visible_width(logo_line);
+            for (size_t i = width; i < 42; ++i) putchar(' ');
+        } else {
+            for (size_t i = 0; i < 42; ++i) putchar(' ');
+        }
+        if (has_information) {
+            info_line[strcspn(info_line, "\r\n")] = '\0';
+            fputs(info_line, stdout);
+        }
+        putchar('\n');
+    } while (has_logo || has_information);
 }
 
 static int print_battery(const char *cyan, const char *reset) {
@@ -599,8 +710,22 @@ void print_terminal(void) {
            terminal && terminal[0] ? terminal : "Unknown");
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    int show_logo = 1;
+    const char *requested_logo = NULL;
+
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--no-logo") == 0) {
+            show_logo = 0;
+        } else if (strcmp(argv[i], "--logo") == 0 && i + 1 < argc) {
+            requested_logo = argv[++i];
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("Usage: %s [--no-logo] [--logo NAME]\n", argv[0]);
+            return 0;
+        }
+    }
+
     struct utsname sys;
     uid_t uid = getuid();
     struct passwd *pw = getpwuid(uid);
@@ -658,7 +783,25 @@ int main(void)
             const char *cyan = colors_enabled() ? ANSI_CYAN : "";
             const char *dim = colors_enabled() ? ANSI_DIM : "";
             const char *reset = colors_enabled() ? ANSI_RESET : "";
+            FILE *logo_output = show_logo ? tmpfile() : NULL;
+            FILE *information_output = show_logo ? tmpfile() : NULL;
+            int side_by_side = show_logo && logo_output != NULL && information_output != NULL;
+            int saved_stdout = -1;
 
+            if (side_by_side) {
+                saved_stdout = dup(STDOUT_FILENO);
+                fflush(stdout);
+                dup2(fileno(logo_output), STDOUT_FILENO);
+            }
+            if (show_logo) print_logo(green, cyan, reset, requested_logo);
+            if (side_by_side) {
+                fflush(stdout);
+                dup2(saved_stdout, STDOUT_FILENO);
+                close(saved_stdout);
+                saved_stdout = dup(STDOUT_FILENO);
+                fflush(stdout);
+                dup2(fileno(information_output), STDOUT_FILENO);
+            }
             printf("%s%s%s%s@%s%s\n", green, pw->pw_name, reset,
                    cyan, hostname, reset);
 
@@ -714,6 +857,18 @@ int main(void)
             printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
             printf("%sShell%s   : %s\n", cyan, reset, shell_name);
             printColorPalette();
+
+            if (side_by_side) {
+                fflush(stdout);
+                dup2(saved_stdout, STDOUT_FILENO);
+                close(saved_stdout);
+                print_side_by_side(logo_output, information_output);
+                fclose(logo_output);
+                fclose(information_output);
+            } else {
+                if (logo_output) fclose(logo_output);
+                if (information_output) fclose(information_output);
+            }
         }
 
     return 0;
