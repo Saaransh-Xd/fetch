@@ -9,7 +9,7 @@ output sections.
 Install globally on a Unix-like system with:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/fetch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/fetch/main/install.sh | sudo bash
 ```
 
 The installer clones the repository, builds the program, installs `sfetch` to
@@ -39,3 +39,11 @@ palette=false
 
 Place a non-empty custom logo in `/etc/sfetch/logo`. An empty or missing file
 uses the detected distro logo instead.
+
+## Screenshots
+
+![sfetch with a custom logo](screenshots/image.png)
+
+![sfetch with the default distro logo](screenshots/image1.png)
+
+![sfetch configuration](screenshots/image2.png)
