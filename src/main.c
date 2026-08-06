@@ -221,22 +221,42 @@ static void print_display_info(const char *cyan, const char *reset) {
     char line[512];
     int width = 0, height = 0;
     double refresh = 0.0;
+    int reading_display_modes = 0;
 
     if (display_command) {
         while (fgets(line, sizeof(line), display_command)) {
             char *connected = strstr(line, " connected");
-            if (!connected) continue;
-            for (char *position = connected; *position != '\0'; ++position) {
-                int candidate_width, candidate_height;
-                if (sscanf(position, "%dx%d", &candidate_width, &candidate_height) == 2) {
-                    width = candidate_width;
-                    height = candidate_height;
-                    char *rate_start = strchr(position, ' ');
-                    if (rate_start) refresh = strtod(rate_start, NULL);
-                    break;
+            if (connected) {
+                for (char *position = connected; *position != '\0'; ++position) {
+                    int candidate_width, candidate_height;
+                    if (sscanf(position, " %dx%d+", &candidate_width, &candidate_height) == 2) {
+                        width = candidate_width;
+                        height = candidate_height;
+                        reading_display_modes = 1;
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            if (reading_display_modes && line[0] != ' ' && line[0] != '\t') break;
+            if (reading_display_modes) {
+                int mode_width, mode_height;
+                char *mode = line;
+                while (*mode != '\0' && !isdigit((unsigned char)*mode)) ++mode;
+                if (sscanf(mode, "%dx%d", &mode_width, &mode_height) == 2 &&
+                    mode_width == width && mode_height == height) {
+                    char *active_marker = strchr(mode, '*');
+                    if (active_marker) {
+                        char *rate_start = active_marker;
+                        while (rate_start > mode &&
+                               (isdigit((unsigned char)rate_start[-1]) || rate_start[-1] == '.'))
+                            --rate_start;
+                        refresh = strtod(rate_start, NULL);
+                        break;
+                    }
                 }
             }
-            if (width > 0) break;
         }
         (void)pclose(display_command);
     }
@@ -298,12 +318,12 @@ void print_gpus(void) {
                    reset, vendor_name, driver, temperature);
         else if (driver[0] != '\0')
             printf("%sGPU%d%s    : %s (%s) | %s\n", label_color, gpu_idx, reset,
-                   vendor_name, driver, "temperature unavailable");
+                   vendor_name, driver, "N/A");
         else if (temperature > 0.0)
             printf("%sGPU%d%s    : %s | %.1f C\n", label_color, gpu_idx, reset,
                    vendor_name, temperature);
         else
-            printf("%sGPU%d%s    : %s | temperature unavailable\n", label_color,
+            printf("%sGPU%d%s    : %s | N/A\n", label_color,
                    gpu_idx, reset, vendor_name);
 
         gpu_idx++;
@@ -577,7 +597,7 @@ int main(void)
             else
                 printf("%sCPU%s     : %s (%d)", cyan, reset, cpu_model, cpu_cores);
             if (cpu_temperature > 0.0) printf(" | %.1f C", cpu_temperature);
-            else printf(" | temperature unavailable");
+            else printf(" | N/A");
             putchar('\n');
             print_gpus();
             unsigned long ram_used = total_ram - free_ram;
