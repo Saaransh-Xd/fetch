@@ -267,6 +267,98 @@ static void print_display_info(const char *cyan, const char *reset) {
         printf("%sDisplay%s  : Unknown\n", cyan, reset);
 }
 
+static int read_first_line(const char *path, char *buffer, size_t size) {
+    FILE *file = fopen(path, "r");
+    if (!file) return 0;
+    if (!fgets(buffer, (int)size, file)) {
+        fclose(file);
+        return 0;
+    }
+    fclose(file);
+    buffer[strcspn(buffer, "\r\n")] = '\0';
+    return 1;
+}
+
+static int print_battery(const char *cyan, const char *reset) {
+    DIR *directory = opendir("/sys/class/power_supply");
+    struct dirent *entry;
+    int found = 0;
+
+    if (!directory) {
+        printf("%sBattery%s : Not detected\n", cyan, reset);
+        return 0;
+    }
+
+    while ((entry = readdir(directory)) != NULL) {
+        char type_path[PATH_MAX];
+        char capacity_path[PATH_MAX];
+        char status_path[PATH_MAX];
+        char name_path[PATH_MAX];
+        char type[32] = "";
+        char status[32] = "Unknown";
+        char name[128] = "";
+        char value[64];
+        int capacity;
+
+        if (strncmp(entry->d_name, "BAT", 3) != 0) continue;
+        snprintf(type_path, sizeof(type_path), "/sys/class/power_supply/%s/type", entry->d_name);
+        if (!read_first_line(type_path, type, sizeof(type)) || strcmp(type, "Battery") != 0)
+            continue;
+
+        snprintf(capacity_path, sizeof(capacity_path),
+                 "/sys/class/power_supply/%s/capacity", entry->d_name);
+        snprintf(status_path, sizeof(status_path),
+                 "/sys/class/power_supply/%s/status", entry->d_name);
+        snprintf(name_path, sizeof(name_path),
+                 "/sys/class/power_supply/%s/model_name", entry->d_name);
+        if (!read_first_line(capacity_path, value, sizeof(value)) ||
+            sscanf(value, "%d", &capacity) != 1)
+            continue;
+        (void)read_first_line(status_path, status, sizeof(status));
+        if (!read_first_line(name_path, name, sizeof(name)) || name[0] == '\0')
+            strncpy(name, entry->d_name, sizeof(name) - 1);
+        name[sizeof(name) - 1] = '\0';
+
+        const char *battery_color = capacity <= 20 ? ANSI_RED :
+                                    capacity <= 40 ? ANSI_YELLOW : ANSI_GREEN;
+        if (!colors_enabled()) battery_color = "";
+        printf("%sBattery%s (%s): %s%d%%%s [%s]\n", cyan, reset, name,
+               battery_color, capacity, reset, status);
+        found = 1;
+    }
+    closedir(directory);
+    if (!found) printf("%sBattery%s : Not detected\n", cyan, reset);
+    return found;
+}
+
+static void print_chassis_type(const char *cyan, const char *reset, int has_battery) {
+    char value[32];
+    int chassis_type;
+    const char *chassis = "Unknown";
+
+    if (read_first_line("/sys/class/dmi/id/chassis_type", value, sizeof(value)) &&
+        sscanf(value, "%d", &chassis_type) == 1) {
+        switch (chassis_type) {
+        case 3: chassis = "Desktop"; break;
+        case 4: chassis = "Low-profile Desktop"; break;
+        case 5: chassis = "Pizza Box"; break;
+        case 6: chassis = "Mini Tower"; break;
+        case 7: chassis = "Tower"; break;
+        case 8: chassis = "Portable"; break;
+        case 9: chassis = "Laptop"; break;
+        case 10: chassis = "Notebook"; break;
+        case 14: chassis = "Sub Notebook"; break;
+        case 30: chassis = "Tablet"; break;
+        case 31: chassis = "Convertible"; break;
+        case 32: chassis = "Detachable"; break;
+        default: break;
+        }
+    }
+    if (strcmp(chassis, "Unknown") == 0)
+        chassis = has_battery ? "Laptop" : "Desktop";
+    printf("%sChassis%s : %s\n", cyan, reset, chassis);
+}
+
 void print_gpus(void) {
     DIR *dir = opendir("/sys/class/drm");
     if (!dir) return;
@@ -616,6 +708,8 @@ int main(void)
             print_terminal();
             print_local_ip(cyan, reset);
             print_display_info(cyan, reset);
+            int has_battery = print_battery(cyan, reset);
+            print_chassis_type(cyan, reset, has_battery);
             printf("%sProcesses%s: %d\n", cyan, reset, s_info.procs);
             printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
             printf("%sShell%s   : %s\n", cyan, reset, shell_name);
