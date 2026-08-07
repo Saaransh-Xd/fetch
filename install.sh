@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPOSITORY="${SFETCH_REPOSITORY:-https://github.com/Saaransh-Xd/fetch.git}"
+VERSION="${SFETCH_VERSION:-v0.1}"
+RELEASE_BINARY="${SFETCH_BINARY_URL:-https://github.com/Saaransh-Xd/fetch/releases/download/${VERSION}/fetch}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
 
 cleanup() {
@@ -14,8 +16,8 @@ if ! command -v git >/dev/null 2>&1; then
     echo "Error: git is required." >&2
     exit 1
 fi
-if ! command -v make >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
-    echo "Error: make and gcc are required." >&2
+if ! command -v curl >/dev/null 2>&1; then
+    echo "Error: curl is required." >&2
     exit 1
 fi
 if ! command -v sudo >/dev/null 2>&1; then
@@ -26,11 +28,12 @@ fi
 echo "Cloning $REPOSITORY..."
 git clone --depth 1 "$REPOSITORY" "$INSTALL_ROOT"
 
-echo "Building sfetch..."
-make -C "$INSTALL_ROOT"
+echo "Downloading sfetch ${VERSION} binary..."
+curl -fL "$RELEASE_BINARY" -o "$INSTALL_ROOT/fetch"
+chmod 755 "$INSTALL_ROOT/fetch"
 
 echo "Installing binary and logos..."
-sudo install -Dm755 "$INSTALL_ROOT/bin/fetch" /usr/local/bin/sfetch
+sudo install -Dm755 "$INSTALL_ROOT/fetch" /usr/local/bin/sfetch
 sudo install -d -m 755 /usr/local/share/sfetch/assets
 sudo cp -R "$INSTALL_ROOT/assets/ascii" /usr/local/share/sfetch/assets/
 

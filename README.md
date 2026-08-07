@@ -12,9 +12,10 @@ Install globally on a Unix-like system with:
 curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/fetch/main/install.sh | sudo bash
 ```
 
-The installer clones the repository, builds the program, installs `sfetch` to
+The installer downloads the release binary, installs `sfetch` to
 `/usr/local/bin`, installs logos to `/usr/local/share/sfetch/assets`, and
-creates `/etc/sfetch/config` if it does not already exist.
+creates `/etc/sfetch/config` if it does not already exist. Set
+`SFETCH_VERSION` to install another release.
 
 ## Usage
 
