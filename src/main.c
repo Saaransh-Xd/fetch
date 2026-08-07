@@ -493,6 +493,9 @@ static size_t visible_width(const char *line) {
         if (line[i] == '\033' && line[i + 1] == '[') {
             i += 2;
             while (line[i] != '\0' && line[i] != 'm') ++i;
+        } else if (((unsigned char)line[i] & 0xC0) == 0x80) {
+            /* UTF-8 continuation bytes are part of the previous cell. */
+            continue;
         } else {
             ++width;
         }
@@ -505,6 +508,22 @@ static void print_side_by_side(FILE *logo, FILE *information) {
     char info_line[2048];
     int has_logo;
     int has_information;
+    size_t logo_width = 0;
+    size_t info_column;
+
+    /*
+     * The old fixed column could overlap wide logos (for example nixos).
+     * Find the widest rendered line first, then keep the historical minimum
+     * column width for smaller logos.
+     */
+    rewind(logo);
+    while (fgets(logo_line, sizeof(logo_line), logo) != NULL) {
+        logo_line[strcspn(logo_line, "\r\n")] = '\0';
+        size_t width = visible_width(logo_line);
+        if (width > logo_width) logo_width = width;
+    }
+    info_column = logo_width + 4;
+    if (info_column < 42) info_column = 42;
 
     rewind(logo);
     rewind(information);
@@ -517,9 +536,9 @@ static void print_side_by_side(FILE *logo, FILE *information) {
             logo_line[strcspn(logo_line, "\r\n")] = '\0';
             fputs(logo_line, stdout);
             size_t width = visible_width(logo_line);
-            for (size_t i = width; i < 42; ++i) putchar(' ');
+            for (size_t i = width; i < info_column; ++i) putchar(' ');
         } else {
-            for (size_t i = 0; i < 42; ++i) putchar(' ');
+            for (size_t i = 0; i < info_column; ++i) putchar(' ');
         }
         if (has_information) {
             info_line[strcspn(info_line, "\r\n")] = '\0';
