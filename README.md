@@ -1,5 +1,7 @@
 # sfetch
 
+The endgame of fetch programs
+
 A small C-based system information utility with ANSI colors, distro ASCII
 logos, battery and chassis detection, mounted-disk reporting, and configurable
 output sections.
