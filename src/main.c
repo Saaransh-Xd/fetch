@@ -410,11 +410,11 @@ static int read_first_line(const char *path, char *buffer, size_t size) {
     return 1;
 }
 
-static void print_logo_line(const char *line, const char *green, const char *cyan,
+static void print_logo_line(const char *line, const char *const logo_colors[9],
                             const char *reset) {
     for (size_t i = 0; line[i] != '\0'; ++i) {
-        if (line[i] == '$' && (line[i + 1] == '1' || line[i + 1] == '2')) {
-            fputs(line[i + 1] == '1' ? green : cyan, stdout);
+        if (line[i] == '$' && line[i + 1] >= '1' && line[i + 1] <= '9') {
+            fputs(logo_colors[line[i + 1] - '1'], stdout);
             ++i;
         } else {
             putchar(line[i]);
@@ -424,7 +424,7 @@ static void print_logo_line(const char *line, const char *green, const char *cya
     putchar('\n');
 }
 
-static void print_logo(const char *green, const char *cyan, const char *reset,
+static void print_logo(const char *const logo_colors[9], const char *reset,
                        const char *requested_logo) {
     char os_id[64];
     char path[PATH_MAX];
@@ -462,7 +462,7 @@ static void print_logo(const char *green, const char *cyan, const char *reset,
 
     while (fgets(line, sizeof(line), logo)) {
         line[strcspn(line, "\r\n")] = '\0';
-        print_logo_line(line, green, cyan, reset);
+        print_logo_line(line, logo_colors, reset);
     }
     fclose(logo);
     putchar('\n');
@@ -939,8 +939,21 @@ int main(int argc, char **argv)
             double cpu_mhz = get_cpu_mhz();
             double cpu_temperature = get_cpu_temperature();
 
-            const char *green = colors_enabled() ? ANSI_GREEN : "";
-            const char *cyan = colors_enabled() ? ANSI_CYAN : "";
+            int use_colors = colors_enabled();
+            /* Fastfetch-compatible $1 through $9 logo color slots. */
+            const char *logo_colors[9] = {
+                use_colors ? ANSI_GREEN : "",
+                use_colors ? ANSI_CYAN : "",
+                use_colors ? ANSI_YELLOW : "",
+                use_colors ? ANSI_BLUE : "",
+                use_colors ? ANSI_MAGENTA : "",
+                use_colors ? ANSI_RED : "",
+                use_colors ? ANSI_WHITE : "",
+                use_colors ? FG_BRIGHT_CYAN : "",
+                use_colors ? FG_BRIGHT_WHITE : ""
+            };
+            const char *green = use_colors ? ANSI_GREEN : "";
+            const char *cyan = use_colors ? ANSI_CYAN : "";
             const char *dim = colors_enabled() ? ANSI_DIM : "";
             const char *reset = colors_enabled() ? ANSI_RESET : "";
             FILE *logo_output = show_logo ? tmpfile() : NULL;
@@ -953,7 +966,7 @@ int main(int argc, char **argv)
                 fflush(stdout);
                 dup2(fileno(logo_output), STDOUT_FILENO);
             }
-            if (show_logo) print_logo(green, cyan, reset, requested_logo);
+            if (show_logo) print_logo(logo_colors, reset, requested_logo);
             if (side_by_side) {
                 fflush(stdout);
                 dup2(saved_stdout, STDOUT_FILENO);
