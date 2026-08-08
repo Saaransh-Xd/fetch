@@ -43,8 +43,6 @@ uses the detected distro logo instead.
 
 ## Screenshots
 
-![sfetch with a custom logo](screenshots/image.png)
+![fetch on bsd](screenshots/image.png)
 
-![sfetch with the default distro logo](screenshots/image1.png)
-
-![sfetch configuration](screenshots/image2.png)
+![sfetch on linux](screenshots/image1.png)
