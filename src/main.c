@@ -2,11 +2,17 @@
 
 #include <stdio.h>
 #include <sys/utsname.h>
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#if defined(__APPLE__)
+#define SFETCH_MACOS 1
+#define SFETCH_BSD 0
+#include "platform.h"
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#define SFETCH_MACOS 0
 #define SFETCH_BSD 1
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #else
+#define SFETCH_MACOS 0
 #define SFETCH_BSD 0
 #include <sys/sysinfo.h>
 #endif
@@ -189,6 +195,10 @@ static void load_config(SfetchConfig *config) {
 }
 
 void get_pretty_name(char *buffer, size_t size) {
+#if SFETCH_MACOS
+    sfetch_macos_get_pretty_name(buffer, size);
+    return;
+#endif
     FILE *f = fopen("/etc/os-release", "r");
     if (!f) {
         f = fopen("/usr/lib/os-release", "r");
@@ -235,6 +245,10 @@ void get_pretty_name(char *buffer, size_t size) {
 }
 
 static void get_os_id(char *buffer, size_t size) {
+#if SFETCH_MACOS
+    sfetch_macos_get_os_id(buffer, size);
+    return;
+#endif
 #if SFETCH_BSD
     struct utsname sys;
     if (uname(&sys) == 0) {
@@ -275,6 +289,10 @@ static void get_os_id(char *buffer, size_t size) {
 }
 
 void get_cpu_model(char *buffer, size_t size) {
+#if SFETCH_MACOS
+    sfetch_macos_get_cpu_model(buffer, size);
+    return;
+#endif
 #if SFETCH_BSD
     if (read_sysctl_string("hw.model", buffer, size)) {
         buffer[strcspn(buffer, "\r\n")] = '\0';
@@ -306,6 +324,9 @@ void get_cpu_model(char *buffer, size_t size) {
 }
 
 int get_cpu_cores(void) {
+#if SFETCH_MACOS
+    return sfetch_macos_get_cpu_cores();
+#endif
 #if SFETCH_BSD
     uint64_t cores;
     if (read_sysctl_u64("hw.ncpu", &cores)) return (int)cores;
@@ -323,6 +344,9 @@ int get_cpu_cores(void) {
 }
 
 double get_cpu_mhz(void) {
+#if SFETCH_MACOS
+    return sfetch_macos_get_cpu_mhz();
+#endif
 #if SFETCH_BSD
     uint64_t frequency;
     if (read_sysctl_u64("hw.cpufrequency", &frequency))
@@ -448,6 +472,10 @@ static void print_local_ip(const char *cyan, const char *reset) {
 }
 
 static void print_display_info(const char *cyan, const char *reset) {
+#if SFETCH_MACOS
+    sfetch_macos_print_display(cyan, reset);
+    return;
+#endif
     FILE *display_command = popen("xrandr --current 2>/dev/null", "r");
     char line[512];
     int width = 0, height = 0;
@@ -569,6 +597,9 @@ static void print_logo(const char *const logo_colors[9], const char *reset,
 }
 
 static int battery_exists(void) {
+#if SFETCH_MACOS
+    return sfetch_macos_battery_exists();
+#endif
     DIR *directory = opendir("/sys/class/power_supply");
     struct dirent *entry;
     char type_path[PATH_MAX];
@@ -649,6 +680,9 @@ static void print_side_by_side(FILE *logo, FILE *information) {
 }
 
 static int print_battery(const char *cyan, const char *reset) {
+#if SFETCH_MACOS
+    return sfetch_macos_print_battery(cyan, reset);
+#endif
     DIR *directory = opendir("/sys/class/power_supply");
     struct dirent *entry;
     int found = 0;
@@ -697,6 +731,10 @@ static int print_battery(const char *cyan, const char *reset) {
 }
 
 static void print_chassis_type(const char *cyan, const char *reset, int has_battery) {
+#if SFETCH_MACOS
+    sfetch_macos_print_chassis(cyan, reset, has_battery);
+    return;
+#endif
     char value[32];
     int chassis_type;
     const char *chassis = "Unknown";
@@ -725,6 +763,10 @@ static void print_chassis_type(const char *cyan, const char *reset, int has_batt
 }
 
 void print_gpus(void) {
+#if SFETCH_MACOS
+    sfetch_macos_print_gpus();
+    return;
+#endif
     DIR *dir = opendir("/sys/class/drm");
     if (!dir) return;
 
@@ -822,6 +864,11 @@ static int is_pseudo_filesystem(const char *filesystem) {
 }
 
 void print_disks(void) {
+#if SFETCH_MACOS
+    sfetch_macos_print_disks(colors_enabled() ? ANSI_CYAN : "",
+                             colors_enabled() ? ANSI_RESET : "");
+    return;
+#endif
     FILE *mounts = fopen("/proc/mounts", "r");
     if (!mounts) return;
 
@@ -875,6 +922,11 @@ void print_disks(void) {
 }
 
 void print_swap(void) {
+#if SFETCH_MACOS
+    sfetch_macos_print_swap(colors_enabled() ? ANSI_CYAN : "",
+                            colors_enabled() ? ANSI_RESET : "");
+    return;
+#endif
     FILE *f = fopen("/proc/swaps", "r");
     if (!f) return;
 
@@ -932,6 +984,11 @@ static unsigned long count_dpkg_packages(void) {
 #endif
 
 void print_packages(void) {
+#if SFETCH_MACOS
+    sfetch_macos_print_packages(colors_enabled() ? ANSI_CYAN : "",
+                                colors_enabled() ? ANSI_RESET : "");
+    return;
+#endif
     unsigned long count = 0;
     const char *manager = NULL;
 
@@ -1024,7 +1081,16 @@ int main(int argc, char **argv)
     }
     get_pretty_name(os_name, sizeof(os_name));
 
-#if SFETCH_BSD
+#if SFETCH_MACOS
+    {
+        SfetchPlatformMemory mac_memory;
+        sfetch_macos_get_memory(&mac_memory);
+        uptime = mac_memory.uptime;
+        total_ram = mac_memory.total_ram;
+        free_ram = mac_memory.free_ram;
+        process_count = mac_memory.process_count;
+    }
+#elif SFETCH_BSD
     {
         uint64_t bsd_total_ram;
         uint64_t bsd_free_ram;
