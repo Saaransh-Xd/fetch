@@ -29,3 +29,9 @@ jobs:
 
       - name: Test
         run: ./bin/fetch
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sfetch-macos-${{ matrix.os }}
+          path: bin/fetch        
