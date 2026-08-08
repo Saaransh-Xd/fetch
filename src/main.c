@@ -919,6 +919,7 @@ static unsigned long count_command_lines(const char *command) {
     return count;
 }
 
+#if !SFETCH_BSD
 static unsigned long count_dpkg_packages(void) {
     FILE *f = fopen("/var/lib/dpkg/status", "r");
     if (!f) return 0;
@@ -932,6 +933,7 @@ static unsigned long count_dpkg_packages(void) {
     fclose(f);
     return count;
 }
+#endif
 
 void print_packages(void) {
     unsigned long count = 0;
