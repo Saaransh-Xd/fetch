@@ -219,6 +219,17 @@ void get_pretty_name(char *buffer, size_t size) {
 }
 
 static void get_os_id(char *buffer, size_t size) {
+#if SFETCH_BSD
+    struct utsname sys;
+    if (uname(&sys) == 0) {
+        size_t i;
+        for (i = 0; i + 1 < size && sys.sysname[i] != '\0'; ++i)
+            buffer[i] = (char)tolower((unsigned char)sys.sysname[i]);
+        buffer[i] = '\0';
+        return;
+    }
+#endif
+
     FILE *file = fopen("/etc/os-release", "r");
     char line[256];
 
