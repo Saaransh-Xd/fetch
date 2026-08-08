@@ -30,7 +30,7 @@ echo "Downloading sfetch ${VERSION} for $(uname -s) x86_64..."
 curl -fL "$RELEASE_BINARY" -o "$INSTALL_ROOT/fetch"
 curl -fL "https://github.com/Saaransh-Xd/fetch/archive/refs/tags/${VERSION}.tar.gz" -o "$INSTALL_ROOT/assets.tar.gz"
 tar -xzf "$INSTALL_ROOT/assets.tar.gz" -C "$INSTALL_ROOT"
-ASSETS_SOURCE="$(find "$INSTALL_ROOT" -type d -path '*/assets/ascii' -print -quit)"
+ASSETS_SOURCE="$(find "$INSTALL_ROOT" -type d -path '*/assets/ascii' -print)"
 [ -n "$ASSETS_SOURCE" ] || { echo "Error: ASCII assets not found." >&2; exit 1; }
 
 chmod 755 "$INSTALL_ROOT/fetch"
