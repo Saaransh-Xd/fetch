@@ -7,6 +7,7 @@ SRC = src/main.c src/ansi.c src/macos.c
 TARGET = bin/fetch
 
 all:
+	mkdir -p bin
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
 
 clean:
