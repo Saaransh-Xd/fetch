@@ -32,8 +32,9 @@ echo "Downloading sfetch ${VERSION} binary..."
 curl -fL "$RELEASE_BINARY" -o "$INSTALL_ROOT/fetch"
 chmod 755 "$INSTALL_ROOT/fetch"
 
-echo "Installing binary and logos..."
+echo "Installing binary, assets and aliases..."
 sudo install -Dm755 "$INSTALL_ROOT/fetch" /usr/local/bin/sfetch
+sudo ln -sf /usr/local/bin/sfetch /usr/local/bin/fetch
 sudo install -d -m 755 /usr/local/share/sfetch/assets
 sudo cp -R "$INSTALL_ROOT/assets/ascii" /usr/local/share/sfetch/assets/
 
