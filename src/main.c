@@ -711,8 +711,8 @@ void print_gpus(void) {
     while ((entry = readdir(dir)) != NULL) {
         if (strncmp(entry->d_name, "card", 4) != 0) continue;
 
-        char vendor_path[512];
-        char uevent_path[512];
+        char vendor_path[1024];
+        char uevent_path[1024];
         snprintf(vendor_path, sizeof(vendor_path), "/sys/class/drm/%s/device/vendor", entry->d_name);
         snprintf(uevent_path, sizeof(uevent_path), "/sys/class/drm/%s/device/uevent", entry->d_name);
 
