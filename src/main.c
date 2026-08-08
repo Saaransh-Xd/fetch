@@ -95,16 +95,32 @@ static unsigned long get_bsd_uptime(void) {
 
 static void get_bsd_memory(uint64_t *total, uint64_t *available) {
     uint64_t pages, page_size;
+    long sysconf_pages;
+    long sysconf_available;
+    long sysconf_page_size;
 
     *total = 0;
     *available = 0;
     (void)read_sysctl_u64("hw.physmem64", total);
     if (*total == 0) (void)read_sysctl_u64("hw.physmem", total);
 
-    if (read_sysctl_u64("hw.usermem", available)) return;
-    if (read_sysctl_u64("vm.stats.vm.v_free_count", &pages) &&
+    (void)read_sysctl_u64("hw.usermem", available);
+    if (*available == 0 && read_sysctl_u64("vm.stats.vm.v_free_count", &pages) &&
         read_sysctl_u64("hw.pagesize", &page_size))
         *available = pages * page_size;
+
+    if (*total == 0) {
+        sysconf_pages = sysconf(_SC_PHYS_PAGES);
+        sysconf_page_size = sysconf(_SC_PAGESIZE);
+        if (sysconf_pages > 0 && sysconf_page_size > 0)
+            *total = (uint64_t)sysconf_pages * (uint64_t)sysconf_page_size;
+    }
+    if (*available == 0) {
+        sysconf_available = sysconf(_SC_AVPHYS_PAGES);
+        sysconf_page_size = sysconf(_SC_PAGESIZE);
+        if (sysconf_available > 0 && sysconf_page_size > 0)
+            *available = (uint64_t)sysconf_available * (uint64_t)sysconf_page_size;
+    }
 }
 #endif
 
@@ -921,6 +937,17 @@ void print_packages(void) {
     unsigned long count = 0;
     const char *manager = NULL;
 
+#if SFETCH_BSD
+    if (access("/usr/local/sbin/pkg", X_OK) == 0 ||
+        access("/usr/local/bin/pkg", X_OK) == 0) {
+        count = count_command_lines("pkg info -a 2>/dev/null");
+        manager = "pkg";
+    } else if (access("/usr/sbin/pkg_info", X_OK) == 0 ||
+               access("/usr/bin/pkg_info", X_OK) == 0) {
+        count = count_command_lines("pkg_info -a 2>/dev/null");
+        manager = "pkg_info";
+    }
+#else
     if (access("/usr/bin/dpkg-query", X_OK) == 0 || access("/bin/dpkg-query", X_OK) == 0) {
         count = count_dpkg_packages();
         manager = "dpkg";
@@ -931,6 +958,7 @@ void print_packages(void) {
         count = count_command_lines("pacman -Qq 2>/dev/null");
         manager = "pacman";
     }
+#endif
 
     const char *label_color = colors_enabled() ? ANSI_CYAN : "";
     const char *reset = colors_enabled() ? ANSI_RESET : "";
@@ -1006,7 +1034,7 @@ int main(int argc, char **argv)
         get_bsd_memory(&bsd_total_ram, &bsd_free_ram);
         total_ram = (unsigned long)bsd_total_ram;
         free_ram = (unsigned long)bsd_free_ram;
-        process_count = -1;
+        process_count = (int)count_command_lines("ps -ax -o pid= 2>/dev/null");
     }
 #else
     {
