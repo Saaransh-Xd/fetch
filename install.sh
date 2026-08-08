@@ -2,7 +2,6 @@
 
 set -euo pipefail
 
-REPOSITORY="${SFETCH_REPOSITORY:-https://github.com/Saaransh-Xd/fetch.git}"
 VERSION="${SFETCH_VERSION:-v0.3}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
 
@@ -11,18 +10,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! command -v git >/dev/null 2>&1; then
-    echo "Error: git is required." >&2
-    exit 1
-fi
 if ! command -v curl >/dev/null 2>&1; then
     echo "Error: curl is required." >&2
     exit 1
 fi
-if ! command -v sudo >/dev/null 2>&1; then
-    echo "Error: sudo is required for a global installation." >&2
+if ! command -v tar >/dev/null 2>&1; then
+    echo "Error: tar is required to install ASCII assets." >&2
     exit 1
 fi
+
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+else
+    echo "Error: run as root or install sudo." >&2
+    exit 1
+fi
+
+run_privileged() {
+    if [ -n "$SUDO" ]; then
+        "$SUDO" "$@"
+    else
+        "$@"
+    fi
+}
 
 if [ -n "${SFETCH_BINARY_URL:-}" ]; then
     RELEASE_BINARY="$SFETCH_BINARY_URL"
@@ -48,22 +60,31 @@ else
     RELEASE_BINARY="https://github.com/Saaransh-Xd/fetch/releases/download/${VERSION}/${RELEASE_ASSET}"
 fi
 
-echo "Cloning $REPOSITORY..."
-git clone --depth 1 "$REPOSITORY" "$INSTALL_ROOT"
-
 echo "Downloading sfetch ${VERSION} binary for $(uname -s)/$(uname -m)..."
 curl -fL "$RELEASE_BINARY" -o "$INSTALL_ROOT/fetch"
 chmod 755 "$INSTALL_ROOT/fetch"
 
-echo "Installing binary, assets and aliases..."
-sudo install -Dm755 "$INSTALL_ROOT/fetch" /usr/local/bin/sfetch
-sudo ln -sf /usr/local/bin/sfetch /usr/local/bin/fetch
-sudo install -d -m 755 /usr/local/share/sfetch/assets
-sudo cp -R "$INSTALL_ROOT/assets/ascii" /usr/local/share/sfetch/assets/
+echo "Downloading ASCII assets..."
+ASSETS_ARCHIVE="$INSTALL_ROOT/assets.tar.gz"
+curl -fL "https://github.com/Saaransh-Xd/fetch/archive/refs/tags/${VERSION}.tar.gz" \
+    -o "$ASSETS_ARCHIVE"
+tar -xzf "$ASSETS_ARCHIVE" -C "$INSTALL_ROOT"
+ASSETS_SOURCE="$(find "$INSTALL_ROOT" -type d -path '*/assets/ascii' -print -quit)"
+if [ -z "$ASSETS_SOURCE" ]; then
+    echo "Error: release assets could not be located." >&2
+    exit 1
+fi
 
-sudo install -d -m 755 /etc/sfetch
+echo "Installing binary, assets and aliases..."
+run_privileged mkdir -p /usr/local/bin
+run_privileged install -m 755 "$INSTALL_ROOT/fetch" /usr/local/bin/sfetch
+run_privileged ln -sf /usr/local/bin/sfetch /usr/local/bin/fetch
+run_privileged mkdir -p /usr/local/share/sfetch/assets/ascii
+run_privileged cp -R "$ASSETS_SOURCE"/. /usr/local/share/sfetch/assets/ascii/
+
+run_privileged mkdir -p /etc/sfetch
 if [ ! -e /etc/sfetch/config ]; then
-    sudo tee /etc/sfetch/config >/dev/null <<'CONFIG'
+    run_privileged tee /etc/sfetch/config >/dev/null <<'CONFIG'
 # sfetch configuration: use true/false to toggle sections.
 logo=true
 header=true
@@ -86,7 +107,7 @@ arch=true
 shell=true
 palette=true
 CONFIG
-    sudo chmod 644 /etc/sfetch/config
+    run_privileged chmod 644 /etc/sfetch/config
 fi
 
 echo "sfetch installed at /usr/local/bin/sfetch"
