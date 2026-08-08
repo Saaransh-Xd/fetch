@@ -75,7 +75,7 @@ void sfetch_macos_get_memory(SfetchPlatformMemory *memory) {
     time_t now = time(NULL);
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
     vm_statistics64_data_t vm_stats;
-    host_basic_info_data_t host_info;
+    host_basic_info_data_t host_info_data;
     mach_msg_type_number_t host_count = HOST_BASIC_INFO_COUNT;
     vm_size_t page_size = 0;
 
@@ -96,9 +96,9 @@ void sfetch_macos_get_memory(SfetchPlatformMemory *memory) {
         memory->free_ram = (unsigned long)(available_pages * page_size);
     }
 
-    if (host_info(mach_host_self(), HOST_BASIC_INFO, (host_info_t)&host_info,
+    if (host_info(mach_host_self(), HOST_BASIC_INFO, (host_info_t)&host_info_data,
                   &host_count) == KERN_SUCCESS && memory->total_ram == 0)
-        memory->total_ram = (unsigned long)host_info.max_mem;
+        memory->total_ram = (unsigned long)host_info_data.max_mem;
 
     memory->process_count = (int)count_command_lines("ps -ax -o pid= 2>/dev/null");
 }
