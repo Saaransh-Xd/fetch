@@ -653,10 +653,7 @@ static int print_battery(const char *cyan, const char *reset) {
     struct dirent *entry;
     int found = 0;
 
-    if (!directory) {
-        printf("%sBattery%s : Not detected\n", cyan, reset);
-        return 0;
-    }
+    if (!directory) return 0;
 
     while ((entry = readdir(directory)) != NULL) {
         char type_path[PATH_MAX];
@@ -696,7 +693,6 @@ static int print_battery(const char *cyan, const char *reset) {
         found = 1;
     }
     closedir(directory);
-    if (!found) printf("%sBattery%s : Not detected\n", cyan, reset);
     return found;
 }
 
