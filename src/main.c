@@ -101,6 +101,7 @@ static unsigned long get_bsd_uptime(void) {
 
 static void get_bsd_memory(uint64_t *total, uint64_t *available) {
     uint64_t pages, page_size;
+    uint64_t user_memory;
     long sysconf_pages;
     long sysconf_available;
     long sysconf_page_size;
@@ -110,8 +111,7 @@ static void get_bsd_memory(uint64_t *total, uint64_t *available) {
     (void)read_sysctl_u64("hw.physmem64", total);
     if (*total == 0) (void)read_sysctl_u64("hw.physmem", total);
 
-    (void)read_sysctl_u64("hw.usermem", available);
-    if (*available == 0 && read_sysctl_u64("vm.stats.vm.v_free_count", &pages) &&
+    if (read_sysctl_u64("vm.stats.vm.v_free_count", &pages) &&
         read_sysctl_u64("hw.pagesize", &page_size))
         *available = pages * page_size;
 
@@ -127,6 +127,10 @@ static void get_bsd_memory(uint64_t *total, uint64_t *available) {
         if (sysconf_available > 0 && sysconf_page_size > 0)
             *available = (uint64_t)sysconf_available * (uint64_t)sysconf_page_size;
     }
+    if (*available == 0 && read_sysctl_u64("hw.usermem", &user_memory))
+        *available = user_memory;
+    if (*total > 0 && *available > *total)
+        *available = *total;
 }
 #endif
 
