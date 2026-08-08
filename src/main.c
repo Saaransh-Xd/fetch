@@ -2,13 +2,22 @@
 
 #include <stdio.h>
 #include <sys/utsname.h>
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+#define SFETCH_BSD 1
+#include <sys/sysctl.h>
+#include <sys/time.h>
+#else
+#define SFETCH_BSD 0
+#include <sys/sysinfo.h>
+#endif
 #include <unistd.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
+#include <time.h>
 #include <sys/types.h>
 #include <pwd.h>
 #include <string.h>
-#include <sys/sysinfo.h>
 #include <dirent.h>
 #include <sys/statvfs.h>
 #include <sys/stat.h>
@@ -59,6 +68,45 @@ static int parse_toggle(const char *value) {
     return strcmp(value, "0") != 0 && strcmp(value, "false") != 0 &&
            strcmp(value, "no") != 0 && strcmp(value, "off") != 0;
 }
+
+#if SFETCH_BSD
+static int read_sysctl_u64(const char *name, uint64_t *value) {
+    size_t size = sizeof(*value);
+    return sysctlbyname(name, value, &size, NULL, 0) == 0 &&
+           (size == sizeof(uint32_t) || size == sizeof(uint64_t));
+}
+
+static int read_sysctl_string(const char *name, char *buffer, size_t size) {
+    size_t length = size;
+    return sysctlbyname(name, buffer, &length, NULL, 0) == 0 && length > 0;
+}
+
+static unsigned long get_bsd_uptime(void) {
+    struct timeval boot_time;
+    size_t size = sizeof(boot_time);
+    int mib[] = { CTL_KERN, KERN_BOOTTIME };
+    time_t now = time(NULL);
+
+    if (sysctl(mib, sizeof(mib) / sizeof(mib[0]), &boot_time, &size, NULL, 0) != 0 ||
+        size != sizeof(boot_time) || now < boot_time.tv_sec)
+        return 0;
+    return (unsigned long)(now - boot_time.tv_sec);
+}
+
+static void get_bsd_memory(uint64_t *total, uint64_t *available) {
+    uint64_t pages, page_size;
+
+    *total = 0;
+    *available = 0;
+    (void)read_sysctl_u64("hw.physmem64", total);
+    if (*total == 0) (void)read_sysctl_u64("hw.physmem", total);
+
+    if (read_sysctl_u64("hw.usermem", available)) return;
+    if (read_sysctl_u64("vm.stats.vm.v_free_count", &pages) &&
+        read_sysctl_u64("hw.pagesize", &page_size))
+        *available = pages * page_size;
+}
+#endif
 
 static void set_config_value(SfetchConfig *config, const char *key, const char *value) {
     int enabled = parse_toggle(value);
@@ -129,7 +177,11 @@ void get_pretty_name(char *buffer, size_t size) {
     if (!f) {
         f = fopen("/usr/lib/os-release", "r");
         if (!f) {
-            snprintf(buffer, size, "Unknown Linux");
+            struct utsname sys;
+            if (uname(&sys) == 0)
+                snprintf(buffer, size, "%s", sys.sysname);
+            else
+                snprintf(buffer, size, "Unknown OS");
             return;
         }
     }
@@ -157,7 +209,13 @@ void get_pretty_name(char *buffer, size_t size) {
     }
     
     fclose(f);
-    snprintf(buffer, size, "Unknown Linux");
+    {
+        struct utsname sys;
+        if (uname(&sys) == 0)
+            snprintf(buffer, size, "%s", sys.sysname);
+        else
+            snprintf(buffer, size, "Unknown OS");
+    }
 }
 
 static void get_os_id(char *buffer, size_t size) {
@@ -190,6 +248,12 @@ static void get_os_id(char *buffer, size_t size) {
 }
 
 void get_cpu_model(char *buffer, size_t size) {
+#if SFETCH_BSD
+    if (read_sysctl_string("hw.model", buffer, size)) {
+        buffer[strcspn(buffer, "\r\n")] = '\0';
+        return;
+    }
+#endif
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) {
         snprintf(buffer, size, "Unknown CPU");
@@ -215,6 +279,10 @@ void get_cpu_model(char *buffer, size_t size) {
 }
 
 int get_cpu_cores(void) {
+#if SFETCH_BSD
+    uint64_t cores;
+    if (read_sysctl_u64("hw.ncpu", &cores)) return (int)cores;
+#endif
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) return 0;
 
@@ -228,6 +296,11 @@ int get_cpu_cores(void) {
 }
 
 double get_cpu_mhz(void) {
+#if SFETCH_BSD
+    uint64_t frequency;
+    if (read_sysctl_u64("hw.cpufrequency", &frequency))
+        return (double)frequency / 1000000.0;
+#endif
     FILE *f = fopen("/proc/cpuinfo", "r");
     if (!f) return 0.0;
 
@@ -889,12 +962,12 @@ int main(int argc, char **argv)
     struct utsname sys;
     uid_t uid = getuid();
     struct passwd *pw = getpwuid(uid);
-    // HOST_NAME_MAX is usually 64 on Linux, defined in <limits.h>
     char hostname[512];
     char os_name[128];
-    get_pretty_name(os_name, sizeof(os_name));
-
-    struct sysinfo s_info;
+    unsigned long uptime;
+    unsigned long total_ram;
+    unsigned long free_ram;
+    int process_count;
 
     if (gethostname(hostname, sizeof(hostname)) != 0) {
         perror("gethostname allocation or runtime error");
@@ -907,21 +980,41 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (sysinfo(&s_info) != 0)
-    {
-        perror("sysinfo");
-        return 1;
-    }    
     if (pw == NULL)
     {
         perror("getpwuid");
         return 1;
     }
-        if (uname(&sys) == 0 && sysinfo(&s_info) == 0)
-        {
-            long days = s_info.uptime / 86400;
-            long hours = (s_info.uptime % 86400) / 3600;
-            long minutes = (s_info.uptime % 3600) / 60;
+    get_pretty_name(os_name, sizeof(os_name));
+
+#if SFETCH_BSD
+    {
+        uint64_t bsd_total_ram;
+        uint64_t bsd_free_ram;
+        uptime = get_bsd_uptime();
+        get_bsd_memory(&bsd_total_ram, &bsd_free_ram);
+        total_ram = (unsigned long)bsd_total_ram;
+        free_ram = (unsigned long)bsd_free_ram;
+        process_count = -1;
+    }
+#else
+    {
+        struct sysinfo s_info;
+        if (sysinfo(&s_info) != 0) {
+            perror("sysinfo");
+            return 1;
+        }
+        uptime = (unsigned long)s_info.uptime;
+        total_ram = s_info.totalram * s_info.mem_unit;
+        free_ram = s_info.freeram * s_info.mem_unit;
+        process_count = s_info.procs;
+    }
+#endif
+
+    {
+            long days = uptime / 86400;
+            long hours = (uptime % 86400) / 3600;
+            long minutes = (uptime % 3600) / 60;
 
             char *shell_path = getenv("SHELL");
 
@@ -929,9 +1022,6 @@ int main(int argc, char **argv)
             if (getloadavg(loads, 3) < 0) {
                 loads[0] = loads[1] = loads[2] = 0.0;
             }
-
-            unsigned long total_ram = s_info.totalram * s_info.mem_unit;
-            unsigned long free_ram = s_info.freeram * s_info.mem_unit;
 
             char cpu_model[128];
             get_cpu_model(cpu_model, sizeof(cpu_model));
@@ -1026,7 +1116,12 @@ int main(int argc, char **argv)
             if (config.display) print_display_info(cyan, reset);
             int has_battery = config.battery ? print_battery(cyan, reset) : battery_exists();
             if (config.chassis) print_chassis_type(cyan, reset, has_battery);
-            if (config.processes) printf("%sProcesses%s: %d\n", cyan, reset, s_info.procs);
+            if (config.processes) {
+                if (process_count >= 0)
+                    printf("%sProcesses%s: %d\n", cyan, reset, process_count);
+                else
+                    printf("%sProcesses%s: Unknown\n", cyan, reset);
+            }
             if (config.arch) printf("%sArch%s    : %s\n", cyan, reset, sys.machine);
             if (config.shell) printf("%sShell%s   : %s\n", cyan, reset, shell_name);
             if (config.palette) printColorPalette();
