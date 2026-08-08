@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REPOSITORY="${SFETCH_REPOSITORY:-https://github.com/Saaransh-Xd/fetch.git}"
-VERSION="${SFETCH_VERSION:-v0.2}"
+VERSION="${SFETCH_VERSION:-v0.3}"
 RELEASE_BINARY="${SFETCH_BINARY_URL:-https://github.com/Saaransh-Xd/fetch/releases/download/${VERSION}/fetch}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
 
