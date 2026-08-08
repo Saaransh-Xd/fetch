@@ -60,6 +60,8 @@ else
     RELEASE_BINARY="https://github.com/Saaransh-Xd/fetch/releases/download/${VERSION}/${RELEASE_ASSET}"
 fi
 
+mkdir -p "$INSTALL_ROOT"
+
 echo "Downloading sfetch ${VERSION} binary for $(uname -s)/$(uname -m)..."
 curl -fL "$RELEASE_BINARY" -o "$INSTALL_ROOT/fetch"
 chmod 755 "$INSTALL_ROOT/fetch"
