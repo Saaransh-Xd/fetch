@@ -59,4 +59,7 @@
 /* Print the standard and bright ANSI background color palettes. */
 void printColorPalette(void);
 
+/* Return non-zero when ANSI color output should be enabled. */
+int colors_enabled(void);
+
 #endif /* FETCH_ANSI_H */

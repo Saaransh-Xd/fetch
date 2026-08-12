@@ -1,11 +1,19 @@
 #include "ansi.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 /* Print one palette block and restore the terminal's previous attributes. */
 static void print_color_block(const char *background)
 {
     printf("%s   %s", background, ANSI_RESET);
+}
+
+int colors_enabled(void)
+{
+    if (getenv("NO_COLOR")) return 0;
+    return isatty(STDOUT_FILENO);
 }
 
 void printColorPalette(void)

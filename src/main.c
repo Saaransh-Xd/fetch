@@ -1118,7 +1118,8 @@ int main(int argc, char **argv)
             is_larp = 1;
         }
     }
-    
+    (void)is_larp;
+
     struct utsname sys;
     uid_t uid = getuid();
     struct passwd *pw = getpwuid(uid);
