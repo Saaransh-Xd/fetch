@@ -57,10 +57,6 @@ typedef struct {
     int palette;
 } SfetchConfig;
 
-static int colors_enabled(void) {
-    return isatty(STDOUT_FILENO) && getenv("NO_COLOR") == NULL;
-}
-
 static char *trim_whitespace(char *value) {
     char *end;
     while (isspace((unsigned char)*value)) ++value;
@@ -1039,24 +1035,90 @@ void print_terminal(void) {
            terminal && terminal[0] ? terminal : "Unknown");
 }
 
+static void print_json_string(const char *value) {
+    for (const char *p = value; *p != '\0'; ++p) {
+        switch (*p) {
+        case '"': fputs("\\\"", stdout); break;
+        case '\\': fputs("\\\\", stdout); break;
+        case '\n': fputs("\\n", stdout); break;
+        case '\t': fputs("\\t", stdout); break;
+        case '\r': fputs("\\r", stdout); break;
+        default: putchar(*p); break;
+        }
+    }
+}
+
+static void print_json_info(const char *user, const char *hostname, const char *os_name,
+                            const char *kernel, const char *arch,
+                            unsigned long uptime_seconds, long days, long hours, long minutes,
+                            unsigned long total_ram, unsigned long free_ram,
+                            int process_count, const char *cpu_model, int cpu_cores,
+                            double cpu_mhz, double cpu_temperature, const char *shell) {
+    unsigned long ram_used = total_ram > free_ram ? total_ram - free_ram : 0;
+    unsigned long ram_percentage = total_ram
+        ? (unsigned long)((double)ram_used * 100.0 / total_ram + 0.5) : 0;
+
+    printf("{\n");
+    printf("  \"user\": \"");
+    print_json_string(user);
+    printf("\",\n  \"hostname\": \"");
+    print_json_string(hostname);
+    printf("\",\n  \"os\": \"");
+    print_json_string(os_name);
+    printf("\",\n  \"kernel\": \"");
+    print_json_string(kernel);
+    printf("\",\n  \"arch\": \"");
+    print_json_string(arch);
+    printf("\",\n");
+    printf("  \"uptime\": {\"seconds\": %lu, \"days\": %ld, \"hours\": %ld, \"minutes\": %ld},\n",
+           uptime_seconds, days, hours, minutes);
+    printf("  \"cpu\": {\"model\": \"");
+    print_json_string(cpu_model);
+    printf("\", \"cores\": %d", cpu_cores);
+    if (cpu_mhz > 0.0) printf(", \"mhz\": %.2f", cpu_mhz);
+    printf(", \"temperature_c\": ");
+    if (cpu_temperature > 0.0) printf("%.1f", cpu_temperature);
+    else printf("null");
+    printf("},\n");
+    printf("  \"memory\": {\"total_mb\": %lu, \"free_mb\": %lu, \"used_mb\": %lu, \"percentage\": %lu},\n",
+           total_ram / 1024 / 1024, free_ram / 1024 / 1024, ram_used / 1024 / 1024,
+           ram_percentage);
+    printf("  \"processes\": %d,\n", process_count);
+    printf("  \"shell\": \"");
+    print_json_string(shell);
+    printf("\"\n");
+    printf("}\n");
+}
+
 int main(int argc, char **argv)
 {
     SfetchConfig config;
     load_config(&config);
     int show_logo = config.logo;
     const char *requested_logo = NULL;
+    int is_json = 0;
+    int is_larp = 0;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--no-logo") == 0) {
             show_logo = 0;
+
         } else if (strcmp(argv[i], "--logo") == 0 && i + 1 < argc) {
             requested_logo = argv[++i];
-        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            printf("Usage: %s [--no-logo] [--logo NAME]\n", argv[0]);
+
+        } else if (strcmp(argv[i], "--help") == 0 ||
+                strcmp(argv[i], "-h") == 0) {
+            printf("Usage: %s [--no-logo] [--logo NAME] [--json] [--larp]\n", argv[0]);
             return 0;
+
+        } else if (strcmp(argv[i], "--json") == 0) {
+            is_json = 1;
+
+        } else if (strcmp(argv[i], "--larp") == 0) {
+            is_larp = 1;
         }
     }
-
+    
     struct utsname sys;
     uid_t uid = getuid();
     struct passwd *pw = getpwuid(uid);
@@ -1136,6 +1198,20 @@ int main(int argc, char **argv)
             double cpu_mhz = get_cpu_mhz();
             double cpu_temperature = get_cpu_temperature();
 
+            const char *shell_name = "Unknown";
+            if (shell_path) {
+                shell_name = strrchr(shell_path, '/');
+                shell_name = shell_name ? shell_name + 1 : shell_path;
+            }
+
+            if (is_json) {
+                print_json_info(pw->pw_name, hostname, os_name, sys.release, sys.machine,
+                                uptime, days, hours, minutes, total_ram, free_ram,
+                                process_count, cpu_model, cpu_cores, cpu_mhz,
+                                cpu_temperature, shell_name);
+                return 0;
+            }
+
             int use_colors = colors_enabled();
             /* Fastfetch-compatible $1 through $9 logo color slots. */
             const char *logo_colors[9] = {
@@ -1184,12 +1260,6 @@ int main(int argc, char **argv)
         if (shell_path == NULL) {
             printf("SHELL environment variable is not set.\n");
         }
-
-            const char *shell_name = "Unknown";
-            if (shell_path) {
-                shell_name = strrchr(shell_path, '/');
-                shell_name = shell_name ? shell_name + 1 : shell_path;
-            }
 
             if (config.os) printf("%sOS%s      : %s\n", cyan, reset, os_name);
             if (config.kernel) printf("%sKernel%s  : %s\n", cyan, reset, sys.release);

@@ -36,7 +36,11 @@ release, or set `SFETCH_BINARY_URL` to override the binary URL.
 sfetch
 sfetch --no-logo
 sfetch --logo arch
+sfetch --json
 ```
+
+`--json` prints the collected system information as JSON instead of the
+stylized side-by-side output, suitable for scripting:
 
 Toggle output sections in `/etc/sfetch/config` with `true` or `false`, for
 example:
