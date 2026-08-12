@@ -2,10 +2,10 @@
 
 #include <stdio.h>
 #include <sys/utsname.h>
+#include "platform.h"
 #if defined(__APPLE__)
 #define SFETCH_MACOS 1
 #define SFETCH_BSD 0
-#include "platform.h"
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 #define SFETCH_MACOS 0
 #define SFETCH_BSD 1
@@ -1048,6 +1048,391 @@ static void print_json_string(const char *value) {
     }
 }
 
+static int collect_local_ip(char *buffer, size_t size) {
+    struct ifaddrs *interfaces;
+    struct ifaddrs *interface;
+    char address[INET_ADDRSTRLEN];
+    int printed = 0;
+
+    buffer[0] = '\0';
+    if (getifaddrs(&interfaces) != 0) return 0;
+
+    for (interface = interfaces; interface != NULL; interface = interface->ifa_next) {
+        struct sockaddr_in *ipv4;
+        if (!interface->ifa_addr || interface->ifa_addr->sa_family != AF_INET ||
+            (interface->ifa_flags & IFF_LOOPBACK) != 0)
+            continue;
+
+        ipv4 = (struct sockaddr_in *)interface->ifa_addr;
+        if (!inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address))) continue;
+        size_t remaining = size - strlen(buffer) - 1;
+        int written = snprintf(buffer + strlen(buffer), remaining,
+                               "%s%s", printed ? ", " : "", address);
+        if (written < 0 || (size_t)written >= remaining) break;
+        printed = 1;
+    }
+    freeifaddrs(interfaces);
+    return printed;
+}
+
+static void collect_terminal(char *buffer, size_t size) {
+    const char *terminal = getenv("TERM_PROGRAM");
+    if (!terminal || terminal[0] == '\0') {
+        if (getenv("WT_SESSION")) terminal = "Windows Terminal";
+        else terminal = getenv("TERM");
+    }
+    snprintf(buffer, size, "%s", terminal && terminal[0] ? terminal : "Unknown");
+}
+
+static void collect_swap(SfetchSwap *swap) {
+#if SFETCH_MACOS
+    sfetch_macos_get_swap(swap);
+    return;
+#endif
+    FILE *f = fopen("/proc/swaps", "r");
+    unsigned long long total_kb = 0, used_kb = 0;
+
+    if (f) {
+        char line[512];
+        (void)fgets(line, sizeof(line), f); /* header */
+        while (fgets(line, sizeof(line), f)) {
+            char filename[256], type[32];
+            unsigned long long size_kb = 0, swap_used_kb = 0;
+            if (sscanf(line, "%255s %31s %llu %llu", filename, type,
+                       &size_kb, &swap_used_kb) == 4) {
+                total_kb += size_kb;
+                used_kb += swap_used_kb;
+            }
+        }
+        fclose(f);
+    }
+    swap->total_kb = total_kb;
+    swap->used_kb = used_kb;
+}
+
+static void collect_packages(SfetchPackages *packages) {
+#if SFETCH_MACOS
+    sfetch_macos_get_packages(packages);
+    return;
+#endif
+    unsigned long count = 0;
+    const char *manager = NULL;
+
+    packages->count = 0;
+    packages->available = 0;
+    packages->manager[0] = '\0';
+
+#if SFETCH_BSD
+    if (access("/usr/local/sbin/pkg", X_OK) == 0 ||
+        access("/usr/local/bin/pkg", X_OK) == 0) {
+        count = count_command_lines("pkg info -a 2>/dev/null");
+        manager = "pkg";
+    } else if (access("/usr/sbin/pkg_info", X_OK) == 0 ||
+               access("/usr/bin/pkg_info", X_OK) == 0) {
+        count = count_command_lines("pkg_info -a 2>/dev/null");
+        manager = "pkg_info";
+    }
+#else
+    if (access("/usr/bin/dpkg-query", X_OK) == 0 || access("/bin/dpkg-query", X_OK) == 0) {
+        count = count_dpkg_packages();
+        manager = "dpkg";
+    } else if (access("/usr/bin/rpm", X_OK) == 0 || access("/bin/rpm", X_OK) == 0) {
+        count = count_command_lines("rpm -qa 2>/dev/null");
+        manager = "rpm";
+    } else if (access("/usr/bin/pacman", X_OK) == 0 || access("/bin/pacman", X_OK) == 0) {
+        count = count_command_lines("pacman -Qq 2>/dev/null");
+        manager = "pacman";
+    }
+#endif
+
+    packages->count = count;
+    if (manager) {
+        packages->available = 1;
+        snprintf(packages->manager, sizeof(packages->manager), "%s", manager);
+    }
+}
+
+static void collect_display(SfetchDisplay *display) {
+#if SFETCH_MACOS
+    sfetch_macos_get_display(display);
+    return;
+#endif
+    FILE *display_command = popen("xrandr --current 2>/dev/null", "r");
+    char line[512];
+    int width = 0, height = 0;
+    double refresh = 0.0;
+    int reading_display_modes = 0;
+
+    display->width = 0;
+    display->height = 0;
+    display->refresh_hz = 0.0;
+
+    if (display_command) {
+        while (fgets(line, sizeof(line), display_command)) {
+            char *connected = strstr(line, " connected");
+            if (connected) {
+                for (char *position = connected; *position != '\0'; ++position) {
+                    int candidate_width, candidate_height;
+                    if (sscanf(position, " %dx%d+", &candidate_width, &candidate_height) == 2) {
+                        width = candidate_width;
+                        height = candidate_height;
+                        reading_display_modes = 1;
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            if (reading_display_modes && line[0] != ' ' && line[0] != '\t') break;
+            if (reading_display_modes) {
+                int mode_width, mode_height;
+                char *mode = line;
+                while (*mode != '\0' && !isdigit((unsigned char)*mode)) ++mode;
+                if (sscanf(mode, "%dx%d", &mode_width, &mode_height) == 2 &&
+                    mode_width == width && mode_height == height) {
+                    char *active_marker = strchr(mode, '*');
+                    if (active_marker) {
+                        char *rate_start = active_marker;
+                        while (rate_start > mode &&
+                               (isdigit((unsigned char)rate_start[-1]) || rate_start[-1] == '.'))
+                            --rate_start;
+                        refresh = strtod(rate_start, NULL);
+                        break;
+                    }
+                }
+            }
+        }
+        (void)pclose(display_command);
+    }
+
+    display->width = width;
+    display->height = height;
+    display->refresh_hz = refresh;
+}
+
+static int collect_battery(SfetchBattery *batteries, int max) {
+#if SFETCH_MACOS
+    return sfetch_macos_get_battery(batteries, max);
+#endif
+    DIR *directory = opendir("/sys/class/power_supply");
+    struct dirent *entry;
+    int count = 0;
+
+    if (!directory) return 0;
+
+    while ((entry = readdir(directory)) != NULL && count < max) {
+        char type_path[PATH_MAX];
+        char capacity_path[PATH_MAX];
+        char status_path[PATH_MAX];
+        char name_path[PATH_MAX];
+        char type[32] = "";
+        char status[32] = "Unknown";
+        char name[128] = "";
+        char value[64];
+        int capacity;
+
+        if (strncmp(entry->d_name, "BAT", 3) != 0) continue;
+        snprintf(type_path, sizeof(type_path), "/sys/class/power_supply/%s/type", entry->d_name);
+        if (!read_first_line(type_path, type, sizeof(type)) || strcmp(type, "Battery") != 0)
+            continue;
+
+        snprintf(capacity_path, sizeof(capacity_path),
+                 "/sys/class/power_supply/%s/capacity", entry->d_name);
+        snprintf(status_path, sizeof(status_path),
+                 "/sys/class/power_supply/%s/status", entry->d_name);
+        snprintf(name_path, sizeof(name_path),
+                 "/sys/class/power_supply/%s/model_name", entry->d_name);
+        if (!read_first_line(capacity_path, value, sizeof(value)) ||
+            sscanf(value, "%d", &capacity) != 1)
+            continue;
+        (void)read_first_line(status_path, status, sizeof(status));
+        if (!read_first_line(name_path, name, sizeof(name)) || name[0] == '\0')
+            strncpy(name, entry->d_name, sizeof(name) - 1);
+        name[sizeof(name) - 1] = '\0';
+
+        snprintf(batteries[count].name, sizeof(batteries[count].name), "%s", name);
+        batteries[count].capacity = capacity;
+        snprintf(batteries[count].status, sizeof(batteries[count].status), "%s", status);
+        count++;
+    }
+    closedir(directory);
+    return count;
+}
+
+static void collect_chassis(SfetchChassis *chassis, int has_battery) {
+#if SFETCH_MACOS
+    sfetch_macos_get_chassis(chassis, has_battery);
+    return;
+#endif
+    char value[32];
+    int chassis_type;
+    const char *type = "Unknown";
+
+    if (read_first_line("/sys/class/dmi/id/chassis_type", value, sizeof(value)) &&
+        sscanf(value, "%d", &chassis_type) == 1) {
+        switch (chassis_type) {
+        case 3: type = "Desktop"; break;
+        case 4: type = "Low-profile Desktop"; break;
+        case 5: type = "Pizza Box"; break;
+        case 6: type = "Mini Tower"; break;
+        case 7: type = "Tower"; break;
+        case 8: type = "Portable"; break;
+        case 9: type = "Laptop"; break;
+        case 10: type = "Notebook"; break;
+        case 14: type = "Sub Notebook"; break;
+        case 30: type = "Tablet"; break;
+        case 31: type = "Convertible"; break;
+        case 32: type = "Detachable"; break;
+        default: break;
+        }
+    }
+    if (strcmp(type, "Unknown") == 0)
+        type = has_battery ? "Laptop" : "Desktop";
+    snprintf(chassis->type, sizeof(chassis->type), "%s", type);
+}
+
+static void collect_disks(SfetchDisk *disks, int *count, int max_disks) {
+#if SFETCH_MACOS
+    sfetch_macos_get_disks(disks, count, max_disks);
+    return;
+#endif
+    FILE *mounts = fopen("/proc/mounts", "r");
+    char device[PATH_MAX], mountpoint[PATH_MAX], filesystem[64];
+    char root_device[PATH_MAX] = "";
+    int n = 0;
+
+    *count = 0;
+    if (!mounts) return;
+
+    /* Find the root device first so bind mounts of it are not reported as disks. */
+    while (fscanf(mounts, "%511s %511s %63s %*s %*d %*d\n",
+                  device, mountpoint, filesystem) == 3) {
+        if (strcmp(mountpoint, "/") == 0) {
+            snprintf(root_device, sizeof(root_device), "%s", device);
+            break;
+        }
+    }
+    rewind(mounts);
+
+    while (fscanf(mounts, "%511s %511s %63s %*s %*d %*d\n",
+                  device, mountpoint, filesystem) == 3 && n < max_disks) {
+        if (is_pseudo_filesystem(filesystem)) continue;
+        if (strcmp(mountpoint, "/") != 0 && strcmp(device, root_device) == 0)
+            continue;
+        if (strcmp(mountpoint, "/") != 0 &&
+            strncmp(device, "/dev/", 5) != 0 &&
+            !(strcmp(filesystem, "9p") == 0 && strncmp(mountpoint, "/mnt/", 5) == 0))
+            continue;
+
+        unescape_mount_field(mountpoint);
+        struct statvfs stats;
+        if (statvfs(mountpoint, &stats) != 0 || stats.f_blocks == 0) continue;
+
+        unsigned long long block_size = stats.f_frsize ? stats.f_frsize : stats.f_bsize;
+        unsigned long long total_bytes = (unsigned long long)stats.f_blocks * block_size;
+        unsigned long long used_bytes = total_bytes -
+                                        (unsigned long long)stats.f_bfree * block_size;
+
+        strncpy(disks[n].mountpoint, mountpoint, sizeof(disks[n].mountpoint) - 1);
+        disks[n].mountpoint[sizeof(disks[n].mountpoint) - 1] = '\0';
+        snprintf(disks[n].filesystem, sizeof(disks[n].filesystem), "%s", filesystem);
+        disks[n].total_gib = (double)total_bytes / (1024.0 * 1024.0 * 1024.0);
+        disks[n].used_gib = (double)used_bytes / (1024.0 * 1024.0 * 1024.0);
+        disks[n].percent = total_bytes
+            ? (unsigned long)((double)used_bytes * 100.0 / total_bytes + 0.5)
+            : 0;
+        n++;
+    }
+    fclose(mounts);
+    *count = n;
+}
+
+static void print_json_extras(void) {
+    SfetchDisk disks[16];
+    SfetchBattery batteries[8];
+    SfetchSwap swap;
+    SfetchPackages packages;
+    SfetchDisplay display;
+    SfetchChassis chassis;
+    char ip_list[512] = "";
+    char terminal[128] = "";
+    int disk_count = 0;
+    int battery_count = 0;
+
+    collect_disks(disks, &disk_count, 16);
+    battery_count = collect_battery(batteries, 8);
+    collect_chassis(&chassis, battery_count > 0);
+    collect_swap(&swap);
+    collect_packages(&packages);
+    collect_display(&display);
+    collect_local_ip(ip_list, sizeof(ip_list));
+    collect_terminal(terminal, sizeof(terminal));
+
+    if (disk_count == 0) {
+        printf("  \"disks\": [],\n");
+    } else {
+        printf("  \"disks\": [\n");
+        for (int i = 0; i < disk_count; ++i) {
+            printf("    {\"mountpoint\": \"");
+            print_json_string(disks[i].mountpoint);
+            printf("\", \"filesystem\": \"");
+            print_json_string(disks[i].filesystem);
+            printf("\", \"used_gib\": %.2f, \"total_gib\": %.2f, \"percent\": %lu}%s\n",
+                   disks[i].used_gib, disks[i].total_gib, disks[i].percent,
+                   i + 1 < disk_count ? "," : "");
+        }
+        printf("  ],\n");
+    }
+
+    printf("  \"swap\": {\"used_mb\": %llu, \"total_mb\": %llu},\n",
+           swap.used_kb / 1024, swap.total_kb / 1024);
+
+    if (packages.available)
+        printf("  \"packages\": {\"count\": %lu, \"manager\": \"%s\"},\n",
+               packages.count, packages.manager);
+    else
+        printf("  \"packages\": {\"count\": null, \"manager\": null},\n");
+
+    printf("  \"terminal\": \"");
+    print_json_string(terminal);
+    printf("\",\n");
+
+    if (ip_list[0] != '\0') {
+        printf("  \"local_ip\": \"");
+        print_json_string(ip_list);
+        printf("\",\n");
+    } else {
+        printf("  \"local_ip\": null,\n");
+    }
+
+    printf("  \"display\": {\"width\": ");
+    if (display.width > 0 && display.height > 0)
+        printf("%d, \"height\": %d", display.width, display.height);
+    else
+        printf("null, \"height\": null");
+    if (display.refresh_hz > 0.0)
+        printf(", \"refresh_hz\": %.1f", display.refresh_hz);
+    printf("},\n");
+
+    if (battery_count == 0) {
+        printf("  \"battery\": [],\n");
+    } else {
+        printf("  \"battery\": [\n");
+        for (int i = 0; i < battery_count; ++i) {
+            printf("    {\"name\": \"");
+            print_json_string(batteries[i].name);
+            printf("\", \"capacity\": %d, \"status\": \"", batteries[i].capacity);
+            print_json_string(batteries[i].status);
+            printf("\"}%s\n", i + 1 < battery_count ? "," : "");
+        }
+        printf("  ],\n");
+    }
+
+    printf("  \"chassis\": \"");
+    print_json_string(chassis.type);
+    printf("\"\n");
+}
+
 static void print_json_info(const char *user, const char *hostname, const char *os_name,
                             const char *kernel, const char *arch,
                             unsigned long uptime_seconds, long days, long hours, long minutes,
@@ -1086,7 +1471,8 @@ static void print_json_info(const char *user, const char *hostname, const char *
     printf("  \"processes\": %d,\n", process_count);
     printf("  \"shell\": \"");
     print_json_string(shell);
-    printf("\"\n");
+    printf("\",\n");
+    print_json_extras();
     printf("}\n");
 }
 

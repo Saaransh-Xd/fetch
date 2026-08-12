@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
+#include <limits.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
 #include <sys/statvfs.h>
@@ -200,5 +201,103 @@ void sfetch_macos_print_packages(const char *cyan, const char *reset) {
     } else {
         printf("%sPackages%s: Unknown\n", cyan, reset);
     }
+}
+
+void sfetch_macos_get_display(SfetchDisplay *display) {
+    FILE *file = popen("system_profiler SPDisplaysDataType 2>/dev/null", "r");
+    char line[512];
+
+    display->width = 0;
+    display->height = 0;
+    display->refresh_hz = 0.0;
+    if (file) {
+        while (fgets(line, sizeof(line), file)) {
+            char *value = strstr(line, "Resolution:");
+            if (value) {
+                value += strlen("Resolution:");
+                while (*value == ' ' || *value == '\t') ++value;
+                (void)sscanf(value, "%dx%d", &display->width, &display->height);
+                (void)pclose(file);
+                return;
+            }
+        }
+        (void)pclose(file);
+    }
+}
+
+void sfetch_macos_get_disks(SfetchDisk *disks, int *count, int max_disks) {
+    struct statvfs stats;
+    *count = 0;
+    if (max_disks < 1) return;
+    if (statvfs("/", &stats) != 0 || stats.f_blocks == 0) return;
+
+    unsigned long long block_size = stats.f_frsize ? stats.f_frsize : stats.f_bsize;
+    unsigned long long total = (unsigned long long)stats.f_blocks * block_size;
+    unsigned long long used = total - (unsigned long long)stats.f_bfree * block_size;
+
+    snprintf(disks[0].mountpoint, sizeof(disks[0].mountpoint), "/");
+    snprintf(disks[0].filesystem, sizeof(disks[0].filesystem), "apfs");
+    disks[0].total_gib = (double)total / (1024.0 * 1024.0 * 1024.0);
+    disks[0].used_gib = (double)used / (1024.0 * 1024.0 * 1024.0);
+    disks[0].percent = total ? (unsigned long)((double)used * 100.0 / total + 0.5) : 0;
+    *count = 1;
+}
+
+void sfetch_macos_get_swap(SfetchSwap *swap) {
+    FILE *file = popen("sysctl -n vm.swapusage 2>/dev/null", "r");
+    char line[256];
+
+    swap->used_kb = 0;
+    swap->total_kb = 0;
+    if (file && fgets(line, sizeof(line), file)) {
+        double total_m = 0.0, used_m = 0.0;
+        if (sscanf(line, "total = %lfM", &total_m) == 1) {
+            char *used_pos = strstr(line, "used =");
+            if (used_pos) {
+                (void)sscanf(used_pos + 6, "%lf", &used_m);
+                swap->total_kb = (unsigned long long)(total_m * 1024.0);
+                swap->used_kb = (unsigned long long)(used_m * 1024.0);
+            }
+        }
+    }
+    if (file) (void)pclose(file);
+}
+
+void sfetch_macos_get_packages(SfetchPackages *packages) {
+    packages->count = 0;
+    packages->available = 0;
+    packages->manager[0] = '\0';
+    if (access("/opt/homebrew/bin/brew", X_OK) == 0 ||
+        access("/usr/local/bin/brew", X_OK) == 0) {
+        unsigned long formulae = count_command_lines("brew list --formula 2>/dev/null");
+        unsigned long casks = count_command_lines("brew list --cask 2>/dev/null");
+        packages->count = formulae + casks;
+        packages->available = 1;
+        snprintf(packages->manager, sizeof(packages->manager), "Homebrew");
+    }
+}
+
+int sfetch_macos_get_battery(SfetchBattery *batteries, int max) {
+    FILE *file = popen("pmset -g batt 2>/dev/null", "r");
+    char line[256];
+    int count = 0;
+
+    if (!file) return 0;
+    while (fgets(line, sizeof(line), file) && count < max) {
+        char *percent = strchr(line, '%');
+        if (!strstr(line, "InternalBattery") || !percent) continue;
+        char *start = percent;
+        while (start > line && start[-1] >= '0' && start[-1] <= '9') --start;
+        batteries[count].capacity = atoi(start);
+        snprintf(batteries[count].name, sizeof(batteries[count].name), "InternalBattery");
+        snprintf(batteries[count].status, sizeof(batteries[count].status), "Unknown");
+        count++;
+    }
+    (void)pclose(file);
+    return count;
+}
+
+void sfetch_macos_get_chassis(SfetchChassis *chassis, int has_battery) {
+    snprintf(chassis->type, sizeof(chassis->type), "%s", has_battery ? "Laptop" : "Desktop");
 }
 #endif
