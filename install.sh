@@ -4,7 +4,6 @@ set -euo pipefail
 
 case "$(uname -s)" in
     Linux) INSTALLER="install-linux.sh" ;;
-    FreeBSD|OpenBSD|NetBSD|DragonFly) INSTALLER="install-bsd.sh" ;;
     Darwin) INSTALLER="install-macos.sh" ;;
     *)
         echo "Error: unsupported operating system: $(uname -s)." >&2
