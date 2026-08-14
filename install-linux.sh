@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VERSION="${SFETCH_VERSION:-v0.3}"
+VERSION="${SFETCH_VERSION:-v0.4}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
 RELEASE_ASSET="sfetch-x86_amd64-linux"
 

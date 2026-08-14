@@ -1521,7 +1521,7 @@ int main(int argc, char **argv)
     int show_logo = config.logo;
     const char *requested_logo = NULL;
     int is_json = 0;
-    int is_larp = 0;
+    int is_larp = 1;
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "eno-logo") == 0) {
@@ -1532,14 +1532,18 @@ int main(int argc, char **argv)
 
         } else if (strcmp(argv[i], "--help") == 0 ||
                 strcmp(argv[i], "-h") == 0) {
-            printf("Usage: %s [--no-logo] [--logo NAME] [--json] [--larp]\n", argv[0]);
+            printf("Usage: %s [--classic] [--no-logo] [--logo NAME] [--json] [--larp]\n", argv[0]);
             return 0;
 
         } else if (strcmp(argv[i], "--json") == 0) {
             is_json = 1;
+            is_larp = 0;
 
         } else if (strcmp(argv[i], "--larp") == 0) {
             is_larp = 1;
+
+        } else if (strcmp(argv[i], "--classic") == 0) {
+            is_larp = 0;
         }
     }
     struct utsname sys;

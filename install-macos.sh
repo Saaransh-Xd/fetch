@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VERSION="${SFETCH_VERSION:-v0.3}"
+VERSION="${SFETCH_VERSION:-v0.4}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
 
 cleanup() { rm -rf "$INSTALL_ROOT"; }

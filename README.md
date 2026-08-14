@@ -34,13 +34,16 @@ release, or set `SFETCH_BINARY_URL` to override the binary URL.
 
 ```sh
 sfetch
-sfetch --no-logo
+sfetch --classic
+sfetch --classic --no-logo
 sfetch --logo arch
 sfetch --json
 sfetch --larp
 ```
 
-`--larp` starts the application in `larp/` inside an embedded CPython
+LARP is the default presentation. `--classic` selects the original native
+fetch output, while `--larp` explicitly selects LARP. LARP starts the
+application in `larp/` inside an embedded CPython
 interpreter. The C program injects its collected system information into
 Python as `sfetch_info`. LARP renders a shaded, rotating distro logo beside
 that data. It requires CPython development files when building.

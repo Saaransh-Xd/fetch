@@ -65,7 +65,7 @@ jobs:
           ./bin/fetch --larp --frames 15 --no-color > /dev/null
 
       - name: Test default output
-        run: ./bin/fetch
+        run: ./bin/fetch --classic
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
