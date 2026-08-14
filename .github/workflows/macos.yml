@@ -27,11 +27,43 @@ jobs:
       - name: Build
         run: make
 
-      - name: Test
+      - name: Test JSON output
+        run: |
+          ./bin/fetch --json > fetch.json
+          python3 - <<'PY'
+          import json
+
+          with open("fetch.json", encoding="utf-8") as stream:
+              info = json.load(stream)
+          assert isinstance(info, dict)
+          assert isinstance(info["disks"], list)
+          assert isinstance(info["memory"], dict)
+          print("JSON output is valid")
+          PY
+
+      - name: Test LARP 360 degree cycle
+        run: |
+          python3 - <<'PY'
+          import math
+          import sys
+
+          sys.path.insert(0, "larp")
+          import larp
+
+          logo = larp.load_logo("unknown")
+          start = larp.shaded_logo(logo, 0.0, larp.RAMP, False)
+          end = larp.shaded_logo(logo, math.tau, larp.RAMP, False)
+          assert start == end, "logo does not return to its starting frame"
+          assert math.isclose((15 / 15) * math.tau, math.tau)
+          print("LARP completes a 360 degree cycle")
+          PY
+          ./bin/fetch --larp --frames 15 --no-color > /dev/null
+
+      - name: Test default output
         run: ./bin/fetch
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: sfetch-macos-${{ matrix.os }}
-          path: bin/fetch        
+          path: bin/fetch

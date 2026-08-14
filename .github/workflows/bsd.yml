@@ -1,0 +1,42 @@
+name: BSD
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and test on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          prepare: pkg install -y gmake python3
+          run: |
+            gmake
+            ./bin/fetch > /dev/null
+            ./bin/fetch --json > fetch.json
+            python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict)'
+            python3 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau)'
+            ./bin/fetch --larp --frames 15 --no-color > /dev/null
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and test on OpenBSD
+        uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: pkg_add -I gmake python3
+          run: |
+            gmake
+            ./bin/fetch > /dev/null
+            ./bin/fetch --json > fetch.json
+            python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict)'
+            python3 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau)'
+            ./bin/fetch --larp --frames 15 --no-color > /dev/null
