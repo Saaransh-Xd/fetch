@@ -169,7 +169,7 @@ def main() -> int:
     parser.add_argument("--version", action="version", version="LARP 1.0")
     parser.add_argument("--eval", metavar="EXPR", help="evaluate a Python expression")
     parser.add_argument("--interactive", action="store_true", help="open a Python console after rendering")
-    parser.add_argument("--frames", type=int, default=48, help="frames to render (default: 48)")
+    parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames")
     parser.add_argument("--infinite", action="store_true", help="spin until Ctrl-C")
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
@@ -190,14 +190,15 @@ def main() -> int:
         global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
         RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
-    frames = max(1, args.frames)
+    frames = max(1, args.frames) if args.frames is not None else None
+    cycle_frames = frames or 48
     logo = load_logo(str(info.get("os_id", "unknown")))
     try:
         frame = 0
-        while args.infinite or frame < frames:
+        while args.infinite or frames is None or frame < frames:
             if color:
                 sys.stdout.write("\033[H\033[2J")
-            angle = (frame / frames) * math.tau * args.speed
+            angle = (frame / cycle_frames) * math.tau * args.speed
             sys.stdout.write(render(info, logo, angle, ramp, color, args.box))
             sys.stdout.write("\n")
             sys.stdout.flush()
