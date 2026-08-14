@@ -112,12 +112,10 @@ def info_lines(info: dict[str, object]) -> list[str]:
     total = int(memory["total_mb"]) * 1024 * 1024
     used = int(memory["used_mb"]) * 1024 * 1024
     cpu = str(cpu_data["model"])
-    if len(cpu) > 34:
-        cpu = cpu[:31] + "..."
     mhz = info.get("cpu_mhz")
     cpu_speed = f" @ {float(mhz) / 1000:.2f} GHz" if mhz else ""
     temperature = info.get("cpu_temperature")
-    cpu_temp = f" | {float(temperature):.1f} C" if temperature else ""
+    cpu_temp = f" | {float(temperature):.1f} C" if temperature is not None else " | N/A"
     lines = [
         f"{GREEN}{info['user']}{RESET}@{CYAN}{info['hostname']}{RESET}",
         f"{DIM}{'-' * (len(str(info['user'])) + len(str(info['hostname'])) + 1)}{RESET}",
@@ -137,7 +135,7 @@ def info_lines(info: dict[str, object]) -> list[str]:
         f"{CYAN}Chassis{RESET}   {info['chassis'] or 'Unknown'}",
     ]
     for disk in info["disks"]:
-        lines.append(f"{CYAN}Disk{RESET}      {disk['mountpoint']}: {disk['used_gib']:.1f}/{disk['total_gib']:.1f} GiB ({disk['percent']}%)")
+        lines.append(f"{CYAN}Disk{RESET}      {disk['mountpoint']}: {disk['used_gib']:.2f} GiB / {disk['total_gib']:.2f} GiB ({disk['percent']}%) - {disk['filesystem']}")
     batteries = info["battery"]
     if batteries:
         for battery in batteries:
