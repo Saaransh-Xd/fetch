@@ -28,15 +28,25 @@ LOGO_COLORS = (GREEN, CYAN, YELLOW, BLUE, MAGENTA, RED, WHITE, BRIGHT_CYAN, BRIG
 BLOCK_RAMP = " ░▒▓█"
 
 
-def logo_path(os_id: str) -> Path:
+def logo_path(os_id: str, requested: str | None = None) -> Path:
     root = Path(__file__).resolve().parent.parent / "assets" / "ascii"
-    candidates = [root / os_id[0:1] / f"{os_id}.txt", root / "_" / "unknown.txt"]
+    if requested:
+        custom_path = Path(requested).expanduser()
+        candidates = [
+            custom_path,
+            root / requested[0:1] / f"{requested}.txt",
+        ]
+    else:
+        system_logo = Path("/etc/sfetch/logo")
+        candidates = [system_logo] if system_logo.is_file() and system_logo.stat().st_size else []
+        candidates.append(root / os_id[0:1] / f"{os_id}.txt")
+    candidates.append(root / "_" / "unknown.txt")
     return next((path for path in candidates if path.is_file()), candidates[-1])
 
 
-def load_logo(os_id: str) -> list[str]:
+def load_logo(os_id: str, requested: str | None = None) -> list[str]:
     try:
-        return logo_path(os_id).read_text(encoding="utf-8").splitlines()
+        return logo_path(os_id, requested).read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         return ["  LARP"]
 
@@ -167,6 +177,7 @@ def render(info: dict[str, object], lines: list[str], angle: float, ramp: str, c
 def main() -> int:
     parser = argparse.ArgumentParser(description="Animated CPython presentation for sfetch")
     parser.add_argument("--version", action="version", version="LARP 1.0")
+    parser.add_argument("--logo", metavar="NAME_OR_PATH", help="use a bundled logo name or custom logo file")
     parser.add_argument("--eval", metavar="EXPR", help="evaluate a Python expression")
     parser.add_argument("--interactive", action="store_true", help="open a Python console after rendering")
     parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames")
@@ -192,7 +203,7 @@ def main() -> int:
 
     frames = max(1, args.frames) if args.frames is not None else None
     cycle_frames = frames or 48
-    logo = load_logo(str(info.get("os_id", "unknown")))
+    logo = load_logo(str(info.get("os_id", "unknown")), args.logo)
     try:
         frame = 0
         while args.infinite or frames is None or frame < frames:
