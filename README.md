@@ -1,6 +1,6 @@
 # larpfetch
 
-The endgame of fetch programs (for larpers)
+The endgame of fetch programs (larp)
 
 A fast, lightweight, cross-platform system information fetch tool for Unix-like systems.
 
