@@ -30,6 +30,7 @@
 #include <ctype.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <net/if.h>
 
 #include "ansi.h"
@@ -119,10 +120,12 @@ static void get_bsd_memory(uint64_t *total, uint64_t *available) {
             *total = (uint64_t)sysconf_pages * (uint64_t)sysconf_page_size;
     }
     if (*available == 0) {
+#ifdef _SC_AVPHYS_PAGES
         sysconf_available = sysconf(_SC_AVPHYS_PAGES);
         sysconf_page_size = sysconf(_SC_PAGESIZE);
         if (sysconf_available > 0 && sysconf_page_size > 0)
             *available = (uint64_t)sysconf_available * (uint64_t)sysconf_page_size;
+#endif
     }
     if (*available == 0 && read_sysctl_u64("hw.usermem", &user_memory))
         *available = user_memory;
