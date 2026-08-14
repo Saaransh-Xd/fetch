@@ -21,7 +21,20 @@ jobs:
             pkg install -y gmake python3
           run: |
             set -eux
-            gmake CC=cc
+            command -v gmake
+            command -v cc
+            command -v python3
+            command -v python3-config
+            freebsd-version
+            python3 --version
+            python3-config --includes
+            python3-config --embed --ldflags
+            set +e
+            gmake CC=cc > build.log 2>&1
+            status=$?
+            cat build.log
+            set -e
+            test "$status" -eq 0
             ./bin/fetch > /dev/null
             ./bin/fetch --json | tee fetch.json
             python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict); print(json.dumps(info, indent=2, sort_keys=True))'
@@ -44,7 +57,20 @@ jobs:
             pkg_add -I gmake 'python%3.12'
           run: |
             set -eux
-            gmake CC=cc PYTHON=python3.12 PYTHON_CONFIG=python3.12-config
+            command -v gmake
+            command -v cc
+            command -v python3.12
+            command -v python3.12-config
+            uname -a
+            python3.12 --version
+            python3.12-config --includes
+            python3.12-config --embed --ldflags
+            set +e
+            gmake CC=cc PYTHON=python3.12 PYTHON_CONFIG=python3.12-config > build.log 2>&1
+            status=$?
+            cat build.log
+            set -e
+            test "$status" -eq 0
             ./bin/fetch > /dev/null
             ./bin/fetch --json | tee fetch.json
             python3.12 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict); print(json.dumps(info, indent=2, sort_keys=True))'
