@@ -9,7 +9,7 @@ A fast, lightweight, cross-platform system information fetch tool for Unix-like 
 Install globally with the platform-dispatching installer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/fetch/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/larpfetch/main/install.sh | bash
 ```
 
 The installer selects the correct release binary automatically:

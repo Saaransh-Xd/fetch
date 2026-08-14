@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+REPOSITORY="${SFETCH_REPOSITORY:-Saaransh-Xd/larpfetch}"
+
 case "$(uname -s)" in
     Linux) INSTALLER="install-linux.sh" ;;
     Darwin) INSTALLER="install-macos.sh" ;;
@@ -21,4 +23,4 @@ if ! command -v curl >/dev/null 2>&1; then
     exit 1
 fi
 
-curl -fsSL "https://raw.githubusercontent.com/Saaransh-Xd/fetch/main/${INSTALLER}" | bash
+curl -fsSL "https://raw.githubusercontent.com/${REPOSITORY}/main/${INSTALLER}" | bash
