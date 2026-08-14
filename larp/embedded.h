@@ -1,6 +1,8 @@
 #ifndef SFETCH_LARP_EMBEDDED_H
 #define SFETCH_LARP_EMBEDDED_H
 
+#include "../src/platform.h"
+
 typedef struct {
     const char *user;
     const char *hostname;
@@ -17,6 +19,16 @@ typedef struct {
     int cpu_cores;
     double cpu_mhz;
     double cpu_temperature;
+    SfetchDisk disks[16];
+    int disk_count;
+    SfetchSwap swap;
+    SfetchPackages packages;
+    SfetchDisplay display;
+    SfetchBattery batteries[8];
+    int battery_count;
+    SfetchChassis chassis;
+    char terminal[128];
+    char local_ip[512];
 } SfetchLarpInfo;
 
 int sfetch_run_larp(int argc, char **argv, const SfetchLarpInfo *info);

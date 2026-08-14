@@ -33,15 +33,6 @@ static int set_python_string(PyObject *dictionary, const char *key, const char *
     return result;
 }
 
-static int set_python_ulong(PyObject *dictionary, const char *key, unsigned long value) {
-    PyObject *object = PyLong_FromUnsignedLong(value);
-    int result;
-    if (!object) return 0;
-    result = PyDict_SetItemString(dictionary, key, object) == 0;
-    Py_DECREF(object);
-    return result;
-}
-
 static int set_python_int(PyObject *dictionary, const char *key, int value) {
     PyObject *object = PyLong_FromLong(value);
     int result;
@@ -60,14 +51,97 @@ static int set_python_double_or_none(PyObject *dictionary, const char *key, doub
     return result;
 }
 
+static int set_python_object(PyObject *dictionary, const char *key, PyObject *object) {
+    return PyDict_SetItemString(dictionary, key, object) == 0;
+}
+
+static PyObject *make_disks(const SfetchLarpInfo *info) {
+    PyObject *list = PyList_New(0);
+    if (!list) return NULL;
+    for (int i = 0; i < info->disk_count; ++i) {
+        const SfetchDisk *disk = &info->disks[i];
+        PyObject *item = Py_BuildValue("{s:s,s:s,s:d,s:d,s:k}",
+                                       "mountpoint", disk->mountpoint,
+                                       "filesystem", disk->filesystem,
+                                       "used_gib", disk->used_gib,
+                                       "total_gib", disk->total_gib,
+                                       "percent", disk->percent);
+        if (!item || PyList_Append(list, item) != 0) {
+            Py_XDECREF(item);
+            Py_DECREF(list);
+            return NULL;
+        }
+        Py_DECREF(item);
+    }
+    return list;
+}
+
+static PyObject *make_batteries(const SfetchLarpInfo *info) {
+    PyObject *list = PyList_New(0);
+    if (!list) return NULL;
+    for (int i = 0; i < info->battery_count; ++i) {
+        const SfetchBattery *battery = &info->batteries[i];
+        PyObject *item = Py_BuildValue("{s:s,s:i,s:s}",
+                                       "name", battery->name,
+                                       "capacity", battery->capacity,
+                                       "status", battery->status);
+        if (!item || PyList_Append(list, item) != 0) {
+            Py_XDECREF(item);
+            Py_DECREF(list);
+            return NULL;
+        }
+        Py_DECREF(item);
+    }
+    return list;
+}
+
 static int install_larp_info(const SfetchLarpInfo *info) {
     PyObject *main_module = PyImport_AddModule("__main__");
     PyObject *dictionary = PyDict_New();
     PyObject *globals;
+    PyObject *uptime = NULL;
+    PyObject *cpu = NULL;
+    PyObject *memory = NULL;
+    PyObject *swap = NULL;
+    PyObject *packages = NULL;
+    PyObject *display = NULL;
+    PyObject *disks = NULL;
+    PyObject *batteries = NULL;
     int ok = dictionary != NULL;
 
     if (!ok) return 0;
-    ok = set_python_string(dictionary, "user", info->user) &&
+    uptime = Py_BuildValue("{s:k,s:k,s:l,s:l}", "seconds", info->uptime,
+                           "days", info->uptime / 86400,
+                           "hours", (info->uptime % 86400) / 3600,
+                           "minutes", (info->uptime % 3600) / 60);
+    cpu = Py_BuildValue("{s:s,s:i}", "model", info->cpu_model, "cores", info->cpu_cores);
+    if (cpu) {
+        if (!set_python_double_or_none(cpu, "mhz", info->cpu_mhz) ||
+            !set_python_double_or_none(cpu, "temperature_c", info->cpu_temperature)) {
+            Py_DECREF(cpu);
+            cpu = NULL;
+        }
+    }
+    memory = Py_BuildValue("{s:k,s:k,s:k,s:k}", "total_mb", info->total_ram / 1024 / 1024,
+                           "free_mb", info->free_ram / 1024 / 1024,
+                           "used_mb", (info->total_ram > info->free_ram
+                               ? info->total_ram - info->free_ram : 0) / 1024 / 1024,
+                           "percentage", info->total_ram
+                               ? (unsigned long)(((double)(info->total_ram > info->free_ram
+                                   ? info->total_ram - info->free_ram : 0) * 100.0 / info->total_ram) + 0.5)
+                               : 0);
+    swap = Py_BuildValue("{s:K,s:K}", "used_mb", info->swap.used_kb / 1024,
+                         "total_mb", info->swap.total_kb / 1024);
+    packages = info->packages.available
+        ? Py_BuildValue("{s:k,s:s}", "count", info->packages.count, "manager", info->packages.manager)
+        : Py_BuildValue("{s:O,s:O}", "count", Py_None, "manager", Py_None);
+    display = Py_BuildValue("{s:i,s:i,s:d}", "width", info->display.width,
+                            "height", info->display.height,
+                            "refresh_hz", info->display.refresh_hz);
+    disks = make_disks(info);
+    batteries = make_batteries(info);
+    ok = uptime && cpu && memory && swap && packages && display && disks && batteries &&
+         set_python_string(dictionary, "user", info->user) &&
          set_python_string(dictionary, "hostname", info->hostname) &&
          set_python_string(dictionary, "os", info->os) &&
          set_python_string(dictionary, "os_id", info->os_id) &&
@@ -75,17 +149,33 @@ static int install_larp_info(const SfetchLarpInfo *info) {
          set_python_string(dictionary, "arch", info->arch) &&
          set_python_string(dictionary, "shell", info->shell) &&
          set_python_string(dictionary, "cpu_model", info->cpu_model) &&
-         set_python_ulong(dictionary, "uptime", info->uptime) &&
-         set_python_ulong(dictionary, "total_ram", info->total_ram) &&
-         set_python_ulong(dictionary, "free_ram", info->free_ram) &&
          set_python_int(dictionary, "process_count", info->process_count) &&
          set_python_int(dictionary, "cpu_cores", info->cpu_cores) &&
          set_python_double_or_none(dictionary, "cpu_mhz", info->cpu_mhz) &&
-         set_python_double_or_none(dictionary, "cpu_temperature", info->cpu_temperature);
+         set_python_double_or_none(dictionary, "cpu_temperature", info->cpu_temperature) &&
+         set_python_object(dictionary, "uptime", uptime) &&
+         set_python_object(dictionary, "cpu", cpu) &&
+         set_python_object(dictionary, "memory", memory) &&
+         set_python_object(dictionary, "swap", swap) &&
+         set_python_object(dictionary, "packages", packages) &&
+         set_python_object(dictionary, "display", display) &&
+         set_python_object(dictionary, "disks", disks) &&
+         set_python_object(dictionary, "battery", batteries) &&
+         set_python_string(dictionary, "terminal", info->terminal) &&
+         set_python_string(dictionary, "local_ip", info->local_ip) &&
+         set_python_string(dictionary, "chassis", info->chassis.type);
     if (ok) {
         globals = PyModule_GetDict(main_module);
         ok = PyDict_SetItemString(globals, "sfetch_info", dictionary) == 0;
     }
+    Py_XDECREF(uptime);
+    Py_XDECREF(cpu);
+    Py_XDECREF(memory);
+    Py_XDECREF(swap);
+    Py_XDECREF(packages);
+    Py_XDECREF(display);
+    Py_XDECREF(disks);
+    Py_XDECREF(batteries);
     Py_DECREF(dictionary);
     return ok;
 }

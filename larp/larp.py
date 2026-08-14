@@ -6,6 +6,7 @@ import argparse
 import code
 import math
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -13,10 +14,17 @@ from pathlib import Path
 
 RESET = "\033[0m"
 DIM = "\033[2m"
+RED = "\033[31m"
+BLUE = "\033[34m"
 CYAN = "\033[36m"
 GREEN = "\033[32m"
+YELLOW = "\033[33m"
 MAGENTA = "\033[35m"
+WHITE = "\033[37m"
+BRIGHT_CYAN = "\033[96m"
+BRIGHT_WHITE = "\033[97m"
 RAMP = ".,-~:;=!*#$@"
+LOGO_COLORS = (GREEN, CYAN, YELLOW, BLUE, MAGENTA, RED, WHITE, BRIGHT_CYAN, BRIGHT_WHITE)
 BLOCK_RAMP = " ░▒▓█"
 
 
@@ -44,14 +52,28 @@ def density(character: str) -> float:
 
 
 def shaded_logo(lines: list[str], angle: float, ramp: str, color: bool) -> list[str]:
-    width = max((len(line) for line in lines), default=1)
+    parsed_lines: list[list[tuple[str, str | None]]] = []
+    for line in lines:
+        parsed: list[tuple[str, str | None]] = []
+        active_color: str | None = None
+        index = 0
+        while index < len(line):
+            if line[index] == "$" and index + 1 < len(line) and line[index + 1] in "123456789":
+                active_color = LOGO_COLORS[int(line[index + 1]) - 1]
+                index += 2
+                continue
+            parsed.append((line[index], active_color))
+            index += 1
+        parsed_lines.append(parsed)
+
+    width = max((len(line) for line in parsed_lines), default=1)
     center = (width - 1) / 2
     cosine = math.cos(angle)
     sine = math.sin(angle)
     rendered: list[str] = []
-    for line in lines:
+    for line in parsed_lines:
         canvas = [" "] * max(1, width + 4)
-        for x, character in enumerate(line):
+        for x, (character, active_color) in enumerate(line):
             weight = density(character)
             if not weight:
                 continue
@@ -59,7 +81,10 @@ def shaded_logo(lines: list[str], angle: float, ramp: str, color: bool) -> list[
             if not 0 <= rotated_x < len(canvas):
                 continue
             light = max(0.0, min(1.0, 0.35 + 0.5 * weight + 0.25 * sine * (x - center) / max(1, width)))
-            canvas[rotated_x] = ramp[min(len(ramp) - 1, int(light * (len(ramp) - 1)))]
+            glyph = ramp[min(len(ramp) - 1, int(light * (len(ramp) - 1)))]
+            if color and active_color:
+                glyph = f"{active_color}{glyph}{RESET}"
+            canvas[rotated_x] = glyph
         rendered.append("".join(canvas).rstrip())
     return rendered
 
@@ -71,41 +96,67 @@ def format_uptime(seconds: int) -> str:
 
 
 def info_lines(info: dict[str, object]) -> list[str]:
-    total = int(info["total_ram"])
-    free = int(info["free_ram"])
-    used = max(0, total - free)
-    percent = round(used * 100 / total) if total else 0
-    cpu = str(info["cpu_model"])
+    memory = info["memory"]
+    cpu_data = info["cpu"]
+    uptime = info["uptime"]
+    total = int(memory["total_mb"]) * 1024 * 1024
+    used = int(memory["used_mb"]) * 1024 * 1024
+    cpu = str(cpu_data["model"])
     if len(cpu) > 34:
         cpu = cpu[:31] + "..."
     mhz = info.get("cpu_mhz")
     cpu_speed = f" @ {float(mhz) / 1000:.2f} GHz" if mhz else ""
     temperature = info.get("cpu_temperature")
     cpu_temp = f" | {float(temperature):.1f} C" if temperature else ""
-    return [
+    lines = [
         f"{GREEN}{info['user']}{RESET}@{CYAN}{info['hostname']}{RESET}",
         f"{DIM}{'-' * (len(str(info['user'])) + len(str(info['hostname'])) + 1)}{RESET}",
         f"{CYAN}OS{RESET}        {info['os']}",
         f"{CYAN}Kernel{RESET}    {info['kernel']}",
-        f"{CYAN}Uptime{RESET}    {format_uptime(int(info['uptime']))}",
-        f"{CYAN}CPU{RESET}       {cpu} ({info['cpu_cores']}){cpu_speed}{cpu_temp}",
-        f"{CYAN}Memory{RESET}    {used // 1024 // 1024} MB / {total // 1024 // 1024} MB ({percent}%)",
+        f"{CYAN}Uptime{RESET}    {format_uptime(int(uptime['seconds']))}",
+        f"{CYAN}CPU{RESET}       {cpu} ({cpu_data['cores']}){cpu_speed}{cpu_temp}",
+        f"{CYAN}Memory{RESET}    {used // 1024 // 1024} MB / {total // 1024 // 1024} MB ({memory['percentage']}%)",
         f"{CYAN}Processes{RESET} {info['process_count']}",
-        f"{CYAN}Arch{RESET}      {info['arch']}",
         f"{CYAN}Shell{RESET}     {info['shell']}",
-        f"{MAGENTA}C → Python bridge{RESET}",
+        f"{CYAN}Arch{RESET}      {info['arch']}",
+        f"{CYAN}Swap{RESET}      {info['swap']['used_mb']} MB / {info['swap']['total_mb']} MB",
+        f"{CYAN}Packages{RESET}  {info['packages']['count'] or 'Unknown'} ({info['packages']['manager'] or 'N/A'})",
+        f"{CYAN}Terminal{RESET}  {info['terminal'] or 'Unknown'}",
+        f"{CYAN}Local IP{RESET}  {info['local_ip'] or 'Unknown'}",
+        f"{CYAN}Display{RESET}   {info['display']['width']}x{info['display']['height']} @ {info['display']['refresh_hz']:.0f} Hz",
+        f"{CYAN}Chassis{RESET}   {info['chassis'] or 'Unknown'}",
     ]
+    for disk in info["disks"]:
+        lines.append(f"{CYAN}Disk{RESET}      {disk['mountpoint']}: {disk['used_gib']:.1f}/{disk['total_gib']:.1f} GiB ({disk['percent']}%)")
+    batteries = info["battery"]
+    if batteries:
+        for battery in batteries:
+            lines.append(f"{CYAN}Battery{RESET}   {battery['name']}: {battery['capacity']}% ({battery['status']})")
+    else:
+        lines.append(f"{CYAN}Battery{RESET}   None detected")
+    return lines
 
 
 def render(info: dict[str, object], lines: list[str], angle: float, ramp: str, color: bool, boxed: bool) -> str:
     logo = shaded_logo(lines, angle, ramp, color)
     details = info_lines(info)
-    height = max(len(logo), len(details))
+    phase = (1.0 - math.cos(angle)) / 2.0
+    x_offset = int(phase * 16)
+    source_width = max((len(re.sub(r"\$[1-9]", "", row)) for row in lines), default=1)
+    # Include the logo's four-cell render margin and its maximum 16-cell shift
+    # so the data column remains fixed for every frame.
+    stage_width = max(58, source_width + 20)
+    gap = " " * 14
+    # Keep the animation vertically anchored; only the horizontal perspective
+    # shift should change as the logo spins.
+    staged_logo = [(" " * x_offset) + row for row in logo]
+    height = max(len(staged_logo), len(details))
     output: list[str] = []
     for row in range(height):
-        left = logo[row] if row < len(logo) else ""
+        left = staged_logo[row] if row < len(staged_logo) else ""
         right = details[row] if row < len(details) else ""
-        output.append(f"  {left:<34}  {right}")
+        visible_left = re.sub(r"\033\[[0-9;]*m", "", left)
+        output.append(f"  {left}{' ' * max(0, stage_width - len(visible_left))}{gap}{right}")
     if boxed:
         width = max(map(len, output), default=0)
         border = "  +" + "-" * width + "+"
@@ -136,8 +187,8 @@ def main() -> int:
     if not ramp:
         parser.error("--shading-chars cannot be empty")
     if not color:
-        global RESET, DIM, CYAN, GREEN, MAGENTA
-        RESET = DIM = CYAN = GREEN = MAGENTA = ""
+        global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
+        RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
     frames = max(1, args.frames)
     logo = load_logo(str(info.get("os_id", "unknown")))
@@ -146,7 +197,8 @@ def main() -> int:
         while args.infinite or frame < frames:
             if color:
                 sys.stdout.write("\033[H\033[2J")
-            sys.stdout.write(render(info, logo, frame * 0.18 * args.speed, ramp, color, args.box))
+            angle = (frame / frames) * math.tau * args.speed
+            sys.stdout.write(render(info, logo, angle, ramp, color, args.box))
             sys.stdout.write("\n")
             sys.stdout.flush()
             frame += 1
