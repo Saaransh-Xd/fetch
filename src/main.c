@@ -74,6 +74,39 @@ static int parse_toggle(const char *value) {
 }
 
 #if SFETCH_BSD
+#if defined(__OpenBSD__)
+static int openbsd_sysctl_mib(const char *name, int mib[2]) {
+    mib[0] = CTL_HW;
+    if (strcmp(name, "hw.model") == 0) mib[1] = HW_MODEL;
+    else if (strcmp(name, "hw.ncpu") == 0) mib[1] = HW_NCPU;
+    else if (strcmp(name, "hw.cpuspeed") == 0) mib[1] = HW_CPUSPEED;
+    else if (strcmp(name, "hw.pagesize") == 0) mib[1] = HW_PAGESIZE;
+    else if (strcmp(name, "hw.physmem64") == 0 || strcmp(name, "hw.physmem") == 0)
+        mib[1] = HW_PHYSMEM64;
+    else if (strcmp(name, "hw.usermem") == 0) mib[1] = HW_USERMEM64;
+    else return 0;
+    return 1;
+}
+
+static int read_sysctl_u64(const char *name, uint64_t *value) {
+    int mib[2];
+    unsigned long long raw = 0;
+    size_t size = sizeof(raw);
+    if (!openbsd_sysctl_mib(name, mib) || sysctl(mib, 2, &raw, &size, NULL, 0) != 0)
+        return 0;
+    if (size != sizeof(uint32_t) && size != sizeof(uint64_t)) return 0;
+    *value = (uint64_t)raw;
+    return 1;
+}
+
+static int read_sysctl_string(const char *name, char *buffer, size_t size) {
+    int mib[2];
+    size_t length = size;
+    if (!openbsd_sysctl_mib(name, mib) || sysctl(mib, 2, buffer, &length, NULL, 0) != 0)
+        return 0;
+    return length > 0;
+}
+#else
 static int read_sysctl_u64(const char *name, uint64_t *value) {
     size_t size = sizeof(*value);
     return sysctlbyname(name, value, &size, NULL, 0) == 0 &&
@@ -84,6 +117,7 @@ static int read_sysctl_string(const char *name, char *buffer, size_t size) {
     size_t length = size;
     return sysctlbyname(name, buffer, &length, NULL, 0) == 0 && length > 0;
 }
+#endif
 
 static unsigned long get_bsd_uptime(void) {
     struct timeval boot_time;
