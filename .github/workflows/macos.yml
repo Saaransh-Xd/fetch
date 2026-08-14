@@ -13,6 +13,7 @@ jobs:
           - macos-15-intel
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -29,7 +30,7 @@ jobs:
 
       - name: Test JSON output
         run: |
-          ./bin/fetch --json > fetch.json
+          ./bin/fetch --json | tee fetch.json
           python3 - <<'PY'
           import json
 
@@ -38,6 +39,7 @@ jobs:
           assert isinstance(info, dict)
           assert isinstance(info["disks"], list)
           assert isinstance(info["memory"], dict)
+          print(json.dumps(info, indent=2, sort_keys=True))
           print("JSON output is valid")
           PY
 
@@ -55,6 +57,9 @@ jobs:
           end = larp.shaded_logo(logo, math.tau, larp.RAMP, False)
           assert start == end, "logo does not return to its starting frame"
           assert math.isclose((15 / 15) * math.tau, math.tau)
+          for frame in range(15):
+              angle = (frame / 15) * math.tau
+              print(f"frame={frame + 1}/15 angle={angle:.6f}")
           print("LARP completes a 360 degree cycle")
           PY
           ./bin/fetch --larp --frames 15 --no-color > /dev/null

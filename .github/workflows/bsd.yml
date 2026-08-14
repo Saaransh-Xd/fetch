@@ -7,6 +7,7 @@ on:
 jobs:
   freebsd:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,17 +15,22 @@ jobs:
       - name: Build and test on FreeBSD
         uses: vmactions/freebsd-vm@v1
         with:
-          prepare: pkg install -y gmake python3
+          usesh: true
+          prepare: |
+            set -eux
+            pkg install -y gmake python3
           run: |
-            gmake
+            set -eux
+            gmake CC=cc
             ./bin/fetch > /dev/null
-            ./bin/fetch --json > fetch.json
-            python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict)'
-            python3 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau)'
+            ./bin/fetch --json | tee fetch.json
+            python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict); print(json.dumps(info, indent=2, sort_keys=True))'
+            python3 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau); [print(f"frame={frame + 1}/15 angle={(frame / 15) * math.tau:.6f}") for frame in range(15)]'
             ./bin/fetch --larp --frames 15 --no-color > /dev/null
 
   openbsd:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,11 +38,15 @@ jobs:
       - name: Build and test on OpenBSD
         uses: vmactions/openbsd-vm@v1
         with:
-          prepare: pkg_add -I gmake python3
+          usesh: true
+          prepare: |
+            set -eux
+            pkg_add -I gmake 'python%3.12'
           run: |
-            gmake
+            set -eux
+            gmake CC=cc PYTHON=python3.12 PYTHON_CONFIG=python3.12-config
             ./bin/fetch > /dev/null
-            ./bin/fetch --json > fetch.json
-            python3 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict)'
-            python3 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau)'
+            ./bin/fetch --json | tee fetch.json
+            python3.12 -c 'import json; info=json.load(open("fetch.json")); assert isinstance(info["disks"], list); assert isinstance(info["memory"], dict); print(json.dumps(info, indent=2, sort_keys=True))'
+            python3.12 -c 'import math,sys; sys.path.insert(0,"larp"); import larp; logo=larp.load_logo("unknown"); assert larp.shaded_logo(logo,0.0,larp.RAMP,False)==larp.shaded_logo(logo,math.tau,larp.RAMP,False); assert math.isclose((15/15)*math.tau,math.tau); [print(f"frame={frame + 1}/15 angle={(frame / 15) * math.tau:.6f}") for frame in range(15)]'
             ./bin/fetch --larp --frames 15 --no-color > /dev/null
