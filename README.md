@@ -37,7 +37,17 @@ sfetch
 sfetch --no-logo
 sfetch --logo arch
 sfetch --json
+sfetch --larp
 ```
+
+`--larp` starts the application in `larp/` inside an embedded CPython
+interpreter. The C program injects its collected system information into
+Python as `sfetch_info`. LARP renders a shaded, rotating distro logo beside
+that data. It requires CPython development files when building.
+
+LARP options include `--frames N`, `--infinite`, `--speed N`, `--blocks`,
+`--shading-chars TEXT`, `--no-color`, `--box`, `--version`, `--eval EXPR`,
+and `--interactive`.
 
 `--json` prints the collected system information as JSON instead of the
 stylized side-by-side output, suitable for scripting:

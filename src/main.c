@@ -33,6 +33,7 @@
 #include <net/if.h>
 
 #include "ansi.h"
+#include "../larp/embedded.h"
 
 typedef struct {
     int logo;
@@ -1486,7 +1487,7 @@ int main(int argc, char **argv)
     int is_larp = 0;
 
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--no-logo") == 0) {
+        if (strcmp(argv[i], "eno-logo") == 0) {
             show_logo = 0;
 
         } else if (strcmp(argv[i], "--logo") == 0 && i + 1 < argc) {
@@ -1504,8 +1505,6 @@ int main(int argc, char **argv)
             is_larp = 1;
         }
     }
-    (void)is_larp;
-
     struct utsname sys;
     uid_t uid = getuid();
     struct passwd *pw = getpwuid(uid);
@@ -1589,6 +1588,31 @@ int main(int argc, char **argv)
             if (shell_path) {
                 shell_name = strrchr(shell_path, '/');
                 shell_name = shell_name ? shell_name + 1 : shell_path;
+            }
+
+            if (is_larp) {
+                SfetchLarpInfo larp_info = {
+                    .user = pw->pw_name,
+                    .hostname = hostname,
+                    .os = os_name,
+                    .kernel = sys.release,
+                    .arch = sys.machine,
+                    .shell = shell_name,
+                    .cpu_model = cpu_model,
+                    .uptime = uptime,
+                    .total_ram = total_ram,
+                    .free_ram = free_ram,
+                    .process_count = process_count,
+                    .cpu_cores = cpu_cores,
+                    .cpu_mhz = cpu_mhz,
+                    .cpu_temperature = cpu_temperature
+                };
+                {
+                    char os_id[64];
+                    get_os_id(os_id, sizeof(os_id));
+                    larp_info.os_id = os_id;
+                    return sfetch_run_larp(argc, argv, &larp_info);
+                }
             }
 
             if (is_json) {
