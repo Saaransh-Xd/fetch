@@ -1591,22 +1591,33 @@ int main(int argc, char **argv)
             }
 
             if (is_larp) {
-                SfetchLarpInfo larp_info = {
-                    .user = pw->pw_name,
-                    .hostname = hostname,
-                    .os = os_name,
-                    .kernel = sys.release,
-                    .arch = sys.machine,
-                    .shell = shell_name,
-                    .cpu_model = cpu_model,
-                    .uptime = uptime,
-                    .total_ram = total_ram,
-                    .free_ram = free_ram,
-                    .process_count = process_count,
-                    .cpu_cores = cpu_cores,
-                    .cpu_mhz = cpu_mhz,
-                    .cpu_temperature = cpu_temperature
-                };
+                SfetchLarpInfo larp_info;
+                memset(&larp_info, 0, sizeof(larp_info));
+                larp_info.disk_count = 0;
+                larp_info.battery_count = collect_battery(larp_info.batteries, 8);
+                collect_disks(larp_info.disks, &larp_info.disk_count, 16);
+                collect_chassis(&larp_info.chassis, larp_info.battery_count > 0);
+                collect_swap(&larp_info.swap);
+                collect_packages(&larp_info.packages);
+                collect_display(&larp_info.display);
+                collect_local_ip(larp_info.local_ip, sizeof(larp_info.local_ip));
+                collect_terminal(larp_info.terminal, sizeof(larp_info.terminal));
+                larp_info.terminal[sizeof(larp_info.terminal) - 1] = '\0';
+                larp_info.local_ip[sizeof(larp_info.local_ip) - 1] = '\0';
+                larp_info.user = pw->pw_name;
+                larp_info.hostname = hostname;
+                larp_info.os = os_name;
+                larp_info.kernel = sys.release;
+                larp_info.arch = sys.machine;
+                larp_info.shell = shell_name;
+                larp_info.cpu_model = cpu_model;
+                larp_info.uptime = uptime;
+                larp_info.total_ram = total_ram;
+                larp_info.free_ram = free_ram;
+                larp_info.process_count = process_count;
+                larp_info.cpu_cores = cpu_cores;
+                larp_info.cpu_mhz = cpu_mhz;
+                larp_info.cpu_temperature = cpu_temperature;
                 {
                     char os_id[64];
                     get_os_id(os_id, sizeof(os_id));
