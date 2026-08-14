@@ -1,6 +1,6 @@
-# sfetch
+# larpfetch
 
-The endgame of fetch programs
+The endgame of fetch programs (for larpers)
 
 A fast, lightweight, cross-platform system information fetch tool for Unix-like systems.
 
@@ -17,7 +17,7 @@ The installer selects the correct release binary automatically:
 | Platform | Architecture | Release asset |
 | --- | --- | --- |
 | Linux | x86_64/amd64 | `sfetch-x86_amd64-linux` |
-| FreeBSD, OpenBSD, NetBSD, DragonFly BSD | x86_64/amd64 | `sfetch-x86_amd64-bsd` |
+| FreeBSD, OpenBSD, NetBSD, DragonFly BSD (currently unavilable) | x86_64/amd64 | `sfetch-x86_amd64-bsd` |
 | macOS | arm64/aarch64 | `sfetch-arm64-applesilicon-macos` |
 | macOS | x86_64/amd64 | `sfetch-macos-x86_amd64` |
 
@@ -70,9 +70,3 @@ palette=false
 
 Place a non-empty custom logo in `/etc/sfetch/logo`. An empty or missing file
 uses the detected distro logo instead.
-
-## Screenshots
-
-![fetch on bsd](screenshots/image.png)
-
-![sfetch on linux](screenshots/image1.png)
