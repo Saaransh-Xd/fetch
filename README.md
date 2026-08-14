@@ -4,7 +4,7 @@ The endgame of fetch programs (larp)
 
 A fast, lightweight, cross-platform system information fetch tool for Unix-like systems.
 
-![demo](assets/demo.gif)
+![demo](screenshots/demo.gif)
 
 ## Install
 
