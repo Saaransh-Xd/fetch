@@ -4,7 +4,7 @@ set -euo pipefail
 
 VERSION="${SFETCH_VERSION:-v0.4}"
 REPOSITORY="${SFETCH_REPOSITORY:-Saaransh-Xd/larpfetch}"
-INSTALL_ROOT="${TMPDIR:-/tmp}/sfetch-install.$$"
+INSTALL_ROOT="${TMPDIR:-/tmp}/larpfetch-install.$$"
 RELEASE_ASSET="sfetch-x86_amd64-linux"
 
 cleanup() { rm -rf "$INSTALL_ROOT"; }
@@ -38,14 +38,14 @@ LARP_SOURCE_FILE="$(find "$INSTALL_ROOT" -type f -name larp.py -print | head -n 
 LARP_SOURCE="$(dirname "$LARP_SOURCE_FILE")"
 
 chmod 755 "$INSTALL_ROOT/fetch"
-run_privileged mkdir -p /usr/local/bin /usr/local/share/sfetch/assets/ascii /usr/local/share/sfetch/larp /etc/sfetch
-run_privileged install -m 755 "$INSTALL_ROOT/fetch" /usr/local/bin/sfetch
-run_privileged ln -sf /usr/local/bin/sfetch /usr/local/bin/fetch
-run_privileged cp -R "$ASSETS_SOURCE"/. /usr/local/share/sfetch/assets/ascii/
-run_privileged cp -R "$LARP_SOURCE"/. /usr/local/share/sfetch/larp/
+run_privileged mkdir -p /usr/local/bin /usr/local/share/larpfetch/assets/ascii /usr/local/share/larpfetch/larp /etc/larpfetch
+run_privileged install -m 755 "$INSTALL_ROOT/fetch" /usr/local/bin/larpfetch
+run_privileged ln -sf /usr/local/bin/larpfetch /usr/local/bin/fetch
+run_privileged cp -R "$ASSETS_SOURCE"/. /usr/local/share/larpfetch/assets/ascii/
+run_privileged cp -R "$LARP_SOURCE"/. /usr/local/share/larpfetch/larp/
 
-if [ ! -e /etc/sfetch/config ]; then
-    run_privileged tee /etc/sfetch/config >/dev/null <<'CONFIG'
+if [ ! -e /etc/larpfetch/config ]; then
+    run_privileged tee /etc/larpfetch/config >/dev/null <<'CONFIG'
 # sfetch configuration: use true/false to toggle sections.
 logo=true
 header=true
@@ -68,6 +68,6 @@ arch=true
 shell=true
 palette=true
 CONFIG
-    run_privileged chmod 644 /etc/sfetch/config
+    run_privileged chmod 644 /etc/larpfetch/config
 fi
-echo "sfetch installed at /usr/local/bin/sfetch"
+echo "larpfetch installed at /usr/local/bin/larpfetch"
