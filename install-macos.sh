@@ -44,7 +44,7 @@ run_privileged ln -sf /usr/local/bin/sfetch /usr/local/bin/fetch
 run_privileged cp -R "$ASSETS_SOURCE"/. /usr/local/share/larpfetch/assets/ascii/
 run_privileged cp -R "$LARP_SOURCE"/. /usr/local/share/larpfetch/larp/
 
-if [ ! -e /etc/sfetch/config ]; then
+if [ ! -e /etc/larpfetch/config ]; then
     run_privileged tee /etc/sfetch/config >/dev/null <<'CONFIG'
 # sfetch configuration: use true/false to toggle sections.
 logo=true
