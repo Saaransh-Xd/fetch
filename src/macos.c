@@ -177,17 +177,49 @@ void sfetch_macos_print_chassis(const char *cyan, const char *reset, int has_bat
     printf("%sChassis%s : %s\n", cyan, reset, has_battery ? "Laptop" : "Desktop");
 }
 
+static void get_macos_apple_gpu_stats(int *cores, double *ghz) {
+    FILE *file = popen("ioreg -l -w 0 -c AGXAccelerator 2>/dev/null", "r");
+    char line[2048];
+    *cores = 0;
+    *ghz = 0.0;
+    if (!file) return;
+    while (fgets(line, sizeof(line), file)) {
+        char *value = strstr(line, "gpu-core-count");
+        if (value) {
+            value = strchr(value, '=');
+            if (value) *cores = (int)strtol(value + 1, NULL, 10);
+        }
+        value = strstr(line, "Core Clock(MHz)");
+        if (!value) value = strstr(line, "gpu-core-frequency");
+        if (value) {
+            value = strchr(value, '=');
+            if (value) {
+                double frequency = strtod(value + 1, NULL);
+                *ghz = frequency > 1000000.0 ? frequency / 1000000000.0 : frequency / 1000.0;
+            }
+        }
+    }
+    (void)pclose(file);
+}
+
 void sfetch_macos_print_gpus(void) {
     FILE *file = popen("system_profiler SPDisplaysDataType 2>/dev/null", "r");
     char line[512];
     int gpu_idx = 0;
+    int gpu_cores = 0;
+    double gpu_ghz = 0.0;
+    get_macos_apple_gpu_stats(&gpu_cores, &gpu_ghz);
     if (!file) return;
     while (fgets(line, sizeof(line), file)) {
         char *value = strstr(line, "Chipset Model:");
         if (value) {
             value += strlen("Chipset Model:");
             while (*value == ' ' || *value == '\t') ++value;
-            printf("GPU%d      : %s", gpu_idx++, value);
+            if (gpu_cores > 0 && gpu_ghz > 0.0)
+                printf("GPU%d      : %.*s (%d) @ %.2f GHz [Integrated]\n", gpu_idx++,
+                       (int)strcspn(value, "\r\n"), value, gpu_cores, gpu_ghz);
+            else
+                printf("GPU%d      : %s", gpu_idx++, value);
         }
     }
     (void)pclose(file);
@@ -199,7 +231,11 @@ void sfetch_macos_print_gpus(void) {
                 if (value) {
                     value += strlen("Chip:");
                     while (*value == ' ' || *value == '\t') ++value;
-                    printf("GPU%d      : %s", gpu_idx++, value);
+                    if (gpu_cores > 0 && gpu_ghz > 0.0)
+                        printf("GPU%d      : %.*s (%d) @ %.2f GHz [Integrated]\n", gpu_idx++,
+                               (int)strcspn(value, "\r\n"), value, gpu_cores, gpu_ghz);
+                    else
+                        printf("GPU%d      : %s", gpu_idx++, value);
                     break;
                 }
             }
