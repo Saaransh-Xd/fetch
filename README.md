@@ -1,7 +1,7 @@
 # larpfetch
 
 > [!WARNING]
-> BSD support isn't available (temp, it works but it may break or not work at all)
+> BSD platforms are no longer supported (it may work but mostly it would break if you want bsd support either use v0.3 or below or f̶u̶c̶k̶  fork off)
 
 The endgame of fetch programs (larp)
 
@@ -19,10 +19,10 @@ curl -fsSL https://raw.githubusercontent.com/Saaransh-Xd/larpfetch/main/install.
 
 The installer selects the correct release binary automatically:
 
-| Platform | Architecture | Release Articaft(named sfetch for compatiblity) |
+| Platform | Architecture | Release Articaft (named sfetch for compatiblity) |
 | --- | --- | --- |
 | Linux | x86_64/amd64 | `larpfetch-x86_amd64-linux` |
-| FreeBSD, OpenBSD, NetBSD, DragonFly BSD (currently unavilable) | x86_64/amd64 | `larpfetch-x86_amd64-bsd` |
+| FreeBSD, OpenBSD, NetBSD, DragonFly BSD (no longer supported use v0.3 or below) | x86_64/amd64 | `larpfetch-x86_amd64-bsd` |
 | macOS | arm64/aarch64 | `larpfetch-arm64-applesilicon-macos` |
 | macOS | x86_64/amd64 | `larpfetch-macos-x86_amd64` |
 
