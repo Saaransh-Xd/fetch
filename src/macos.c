@@ -107,22 +107,42 @@ void sfetch_macos_get_memory(SfetchPlatformMemory *memory) {
 void sfetch_macos_print_display(const char *cyan, const char *reset) {
     FILE *file = popen("system_profiler SPDisplaysDataType 2>/dev/null", "r");
     char line[512];
+    int width = 0, height = 0;
+    double refresh = 0.0;
+    int display_idx = 0;
+
+    #define PRINT_MAC_DISPLAY() do { \
+        if (width > 0 && height > 0) { \
+            if (refresh > 0.0) \
+                printf("%sDisplay%d%s : %dx%d @ %.0f Hz\\n", cyan, display_idx++, reset, width, height, refresh); \
+            else \
+                printf("%sDisplay%d%s : %dx%d @ N/A\\n", cyan, display_idx++, reset, width, height); \
+        } \
+    } while (0)
 
     if (file) {
         while (fgets(line, sizeof(line), file)) {
             char *value = strstr(line, "Resolution:");
             if (value) {
+                PRINT_MAC_DISPLAY();
+                width = height = 0;
+                refresh = 0.0;
                 value += strlen("Resolution:");
                 while (*value == ' ' || *value == '\t') ++value;
-                value[strcspn(value, "\r\n")] = '\0';
-                printf("%sDisplay%s  : %s\n", cyan, reset, value);
-                (void)pclose(file);
-                return;
+                if (sscanf(value, "%d x %d", &width, &height) != 2)
+                    (void)sscanf(value, "%dx%d", &width, &height);
+            }
+            value = strstr(line, "Refresh Rate:");
+            if (value) {
+                value += strlen("Refresh Rate:");
+                refresh = strtod(value, NULL);
             }
         }
         (void)pclose(file);
     }
-    printf("%sDisplay%s  : Unknown\n", cyan, reset);
+    PRINT_MAC_DISPLAY();
+    if (display_idx == 0) printf("%sDisplay%s  : Unknown\n", cyan, reset);
+    #undef PRINT_MAC_DISPLAY
 }
 
 int sfetch_macos_battery_exists(void) {
@@ -218,10 +238,15 @@ void sfetch_macos_get_display(SfetchDisplay *display) {
             if (value) {
                 value += strlen("Resolution:");
                 while (*value == ' ' || *value == '\t') ++value;
-                (void)sscanf(value, "%dx%d", &display->width, &display->height);
-                (void)pclose(file);
-                return;
+                if (sscanf(value, "%d x %d", &display->width, &display->height) != 2)
+                    (void)sscanf(value, "%dx%d", &display->width, &display->height);
             }
+            value = strstr(line, "Refresh Rate:");
+            if (value) {
+                value += strlen("Refresh Rate:");
+                display->refresh_hz = strtod(value, NULL);
+            }
+            if (display->width > 0 && display->height > 0 && display->refresh_hz > 0.0) break;
         }
         (void)pclose(file);
     }
