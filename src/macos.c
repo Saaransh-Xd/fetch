@@ -191,6 +191,22 @@ void sfetch_macos_print_gpus(void) {
         }
     }
     (void)pclose(file);
+    if (gpu_idx == 0) {
+        file = popen("system_profiler SPHardwareDataType 2>/dev/null", "r");
+        if (file) {
+            while (fgets(line, sizeof(line), file)) {
+                char *value = strstr(line, "Chip:");
+                if (value) {
+                    value += strlen("Chip:");
+                    while (*value == ' ' || *value == '\t') ++value;
+                    printf("GPU%d      : %s", gpu_idx++, value);
+                    break;
+                }
+            }
+            (void)pclose(file);
+        }
+    }
+    if (gpu_idx == 0) printf("GPU       : Unknown\n");
 }
 
 void sfetch_macos_print_disks(const char *cyan, const char *reset) {
