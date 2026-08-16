@@ -530,52 +530,30 @@ static int get_lspci_name(const char *card_name, char *name, size_t name_size) {
 
 static int print_wsl_gpus(void) {
 #if !SFETCH_MACOS && !SFETCH_BSD
-    FILE *release_file;
     FILE *gpu_file;
-    char release[256];
     char line[512];
     int gpu_idx = 0;
     const char *label_color = colors_enabled() ? ANSI_CYAN : "";
     const char *reset = colors_enabled() ? ANSI_RESET : "";
 
-    release_file = fopen("/proc/sys/kernel/osrelease", "r");
-    if (!release_file || !fgets(release, sizeof(release), release_file)) {
-        if (release_file) fclose(release_file);
-        return 0;
-    }
-    fclose(release_file);
-    if (!strstr(release, "microsoft")) return 0;
-
-    gpu_file = popen("powershell.exe -NoProfile -NonInteractive -Command \"Get-CimInstance Win32_VideoController | ForEach-Object { \\$_.Name + '|' + \\$_.AdapterRAM }\" 2>/dev/null", "r");
+    gpu_file = popen("if [ -x /usr/lib/wsl/lib/nvidia-smi ]; then /usr/lib/wsl/lib/nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits; else nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits; fi 2>/dev/null", "r");
     if (!gpu_file) return 0;
     while (fgets(line, sizeof(line), gpu_file)) {
         char *name = trim_whitespace(line);
         char *separator = strchr(name, '|');
+        if (!separator) separator = strchr(name, ',');
         unsigned long long vram_bytes = 0;
-        const char *kind = "Integrated";
+        const char *kind = "Discrete";
         char vram[64] = "Unknown";
 
         if (separator) {
             char *end;
             *separator++ = '\0';
             separator = trim_whitespace(separator);
-            vram_bytes = strtoull(separator, &end, 10);
+            vram_bytes = strtoull(separator, &end, 10) * 1024ULL * 1024ULL;
             if (*separator == '\0' || *end != '\0') vram_bytes = 0;
         }
         if (*name == '\0') continue;
-        if (strstr(name, "NVIDIA") || strstr(name, "Radeon RX") ||
-            strstr(name, "Radeon Pro"))
-            kind = "Discrete";
-        if (strstr(name, "NVIDIA") && access("/usr/lib/wsl/lib/nvidia-smi", X_OK) == 0) {
-            FILE *nvidia_file = popen("/usr/lib/wsl/lib/nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null", "r");
-            char nvidia_vram[64];
-            if (nvidia_file && fgets(nvidia_vram, sizeof(nvidia_vram), nvidia_file)) {
-                char *end;
-                unsigned long long nvidia_mib = strtoull(trim_whitespace(nvidia_vram), &end, 10);
-                if (end != trim_whitespace(nvidia_vram)) vram_bytes = nvidia_mib * 1024ULL * 1024ULL;
-            }
-            if (nvidia_file) (void)pclose(nvidia_file);
-        }
         if (vram_bytes >= 1024ULL * 1024ULL * 1024ULL)
             snprintf(vram, sizeof(vram), "%.2f GiB", (double)vram_bytes / (1024.0 * 1024.0 * 1024.0));
         else if (vram_bytes > 0)
