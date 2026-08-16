@@ -1,5 +1,8 @@
 # larpfetch
 
+> [!WARNING]
+> BSD support isn't available (temp, it works but it may break or not work at all)
+
 The endgame of fetch programs (larp)
 
 A fast, lightweight, cross-platform system information fetch tool for Unix-like systems.
