@@ -481,6 +481,53 @@ static double get_gpu_temperature(const char *card_name) {
     return 0.0;
 }
 
+static int is_drm_card(const char *name) {
+    const char *cursor;
+    if (strncmp(name, "card", 4) != 0 || name[4] == '\0') return 0;
+    for (cursor = name + 4; *cursor != '\0'; ++cursor)
+        if (*cursor < '0' || *cursor > '9') return 0;
+    return 1;
+}
+
+static int get_lspci_name(const char *card_name, char *name, size_t name_size) {
+    char device_path[PATH_MAX];
+    char device_real_path[PATH_MAX];
+    char command[PATH_MAX + 64];
+    char line[512];
+    const char *device;
+    char *description;
+    FILE *file;
+
+    if (snprintf(device_path, sizeof(device_path), "/sys/class/drm/%s/device", card_name) >=
+        (int)sizeof(device_path)) return 0;
+    if (!realpath(device_path, device_real_path)) return 0;
+    device = strrchr(device_real_path, '/');
+    if (!device || device[1] == '\0') return 0;
+    ++device;
+
+    if (snprintf(command, sizeof(command), "lspci -D -s %s -nn 2>/dev/null", device) >=
+        (int)sizeof(command)) return 0;
+    file = popen(command, "r");
+    if (!file) return 0;
+    if (!fgets(line, sizeof(line), file)) {
+        (void)pclose(file);
+        return 0;
+    }
+    (void)pclose(file);
+
+    description = strstr(line, "]: ");
+    if (!description) return 0;
+    description += 3;
+    description[strcspn(description, "\r\n")] = '\0';
+    {
+        char *pci_id = strrchr(description, '[');
+        if (pci_id && pci_id > description && pci_id[-1] == ' ') pci_id[-1] = '\0';
+    }
+    if (*description == '\0') return 0;
+    snprintf(name, name_size, "%s", description);
+    return 1;
+}
+
 static void print_local_ip(const char *cyan, const char *reset) {
     struct ifaddrs *interfaces;
     struct ifaddrs *interface;
@@ -812,7 +859,7 @@ void print_gpus(void) {
     int gpu_idx = 0;
 
     while ((entry = readdir(dir)) != NULL) {
-        if (strncmp(entry->d_name, "card", 4) != 0) continue;
+        if (!is_drm_card(entry->d_name)) continue;
 
         char vendor_path[1024];
         char uevent_path[1024];
@@ -847,10 +894,25 @@ void print_gpus(void) {
         else if (strstr(vendor, "0x10de")) vendor_name = "NVIDIA";
         else if (strstr(vendor, "0x8086")) vendor_name = "Intel";
 
+        char gpu_name[512] = "";
+        int has_gpu_name = get_lspci_name(entry->d_name, gpu_name, sizeof(gpu_name));
+
         const char *label_color = colors_enabled() ? ANSI_CYAN : "";
         const char *reset = colors_enabled() ? ANSI_RESET : "";
         double temperature = get_gpu_temperature(entry->d_name);
-        if (driver[0] != '\0' && temperature > 0.0)
+        if (has_gpu_name && driver[0] != '\0' && temperature > 0.0)
+            printf("%sGPU%d%s    : %s (%s) | %.1f C\n", label_color, gpu_idx,
+                   reset, gpu_name, driver, temperature);
+        else if (has_gpu_name && driver[0] != '\0')
+            printf("%sGPU%d%s    : %s (%s) | %s\n", label_color, gpu_idx, reset,
+                   gpu_name, driver, "N/A");
+        else if (has_gpu_name && temperature > 0.0)
+            printf("%sGPU%d%s    : %s | %.1f C\n", label_color, gpu_idx, reset,
+                   gpu_name, temperature);
+        else if (has_gpu_name)
+            printf("%sGPU%d%s    : %s | N/A\n", label_color, gpu_idx, reset,
+                   gpu_name);
+        else if (driver[0] != '\0' && temperature > 0.0)
             printf("%sGPU%d%s    : %s (%s) | %.1f C\n", label_color, gpu_idx,
                    reset, vendor_name, driver, temperature);
         else if (driver[0] != '\0')

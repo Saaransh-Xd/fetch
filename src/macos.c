@@ -160,12 +160,14 @@ void sfetch_macos_print_chassis(const char *cyan, const char *reset, int has_bat
 void sfetch_macos_print_gpus(void) {
     FILE *file = popen("system_profiler SPDisplaysDataType 2>/dev/null", "r");
     char line[512];
+    int gpu_idx = 0;
     if (!file) return;
     while (fgets(line, sizeof(line), file)) {
         char *value = strstr(line, "Chipset Model:");
         if (value) {
-            printf("GPU       : %s", value + strlen("Chipset Model: "));
-            break;
+            value += strlen("Chipset Model:");
+            while (*value == ' ' || *value == '\t') ++value;
+            printf("GPU%d      : %s", gpu_idx++, value);
         }
     }
     (void)pclose(file);
