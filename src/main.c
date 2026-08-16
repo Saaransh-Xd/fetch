@@ -546,12 +546,42 @@ static int print_wsl_gpus(void) {
     fclose(release_file);
     if (!strstr(release, "microsoft")) return 0;
 
-    gpu_file = popen("powershell.exe -NoProfile -NonInteractive -Command \"Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name\" 2>/dev/null", "r");
+    gpu_file = popen("powershell.exe -NoProfile -NonInteractive -Command \"Get-CimInstance Win32_VideoController | ForEach-Object { \\$_.Name + '|' + \\$_.AdapterRAM }\" 2>/dev/null", "r");
     if (!gpu_file) return 0;
     while (fgets(line, sizeof(line), gpu_file)) {
         char *name = trim_whitespace(line);
+        char *separator = strchr(name, '|');
+        unsigned long long vram_bytes = 0;
+        const char *kind = "Integrated";
+        char vram[64] = "Unknown";
+
+        if (separator) {
+            char *end;
+            *separator++ = '\0';
+            separator = trim_whitespace(separator);
+            vram_bytes = strtoull(separator, &end, 10);
+            if (*separator == '\0' || *end != '\0') vram_bytes = 0;
+        }
         if (*name == '\0') continue;
-        printf("%sGPU%d%s    : %s | N/A\n", label_color, gpu_idx++, reset, name);
+        if (strstr(name, "NVIDIA") || strstr(name, "Radeon RX") ||
+            strstr(name, "Radeon Pro"))
+            kind = "Discrete";
+        if (strstr(name, "NVIDIA") && access("/usr/lib/wsl/lib/nvidia-smi", X_OK) == 0) {
+            FILE *nvidia_file = popen("/usr/lib/wsl/lib/nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null", "r");
+            char nvidia_vram[64];
+            if (nvidia_file && fgets(nvidia_vram, sizeof(nvidia_vram), nvidia_file)) {
+                char *end;
+                unsigned long long nvidia_mib = strtoull(trim_whitespace(nvidia_vram), &end, 10);
+                if (end != trim_whitespace(nvidia_vram)) vram_bytes = nvidia_mib * 1024ULL * 1024ULL;
+            }
+            if (nvidia_file) (void)pclose(nvidia_file);
+        }
+        if (vram_bytes >= 1024ULL * 1024ULL * 1024ULL)
+            snprintf(vram, sizeof(vram), "%.2f GiB", (double)vram_bytes / (1024.0 * 1024.0 * 1024.0));
+        else if (vram_bytes > 0)
+            snprintf(vram, sizeof(vram), "%.2f MiB", (double)vram_bytes / (1024.0 * 1024.0));
+        printf("%sGPU%d%s    : %s (%s) [%s]\n", label_color, gpu_idx++, reset,
+               name, vram, kind);
     }
     (void)pclose(gpu_file);
     return gpu_idx;
