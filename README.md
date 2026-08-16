@@ -3,7 +3,7 @@
 > [!WARNING]
 > BSD platforms are no longer supported (it may work but mostly it would break if you want bsd support either use v0.3 or below or 𝖿̶𝗎̶𝖼̶𝗄̶ fork off)
 
-The endgame of fetch programs (larp)
+The endgame of fetch programs
 
 A fast, lightweight, cross-platform system information fetch tool for Unix-like systems.
 
