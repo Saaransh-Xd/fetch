@@ -528,6 +528,38 @@ static int get_lspci_name(const char *card_name, char *name, size_t name_size) {
     return 1;
 }
 
+static int print_wsl_gpus(void) {
+#if !SFETCH_MACOS && !SFETCH_BSD
+    FILE *release_file;
+    FILE *gpu_file;
+    char release[256];
+    char line[512];
+    int gpu_idx = 0;
+    const char *label_color = colors_enabled() ? ANSI_CYAN : "";
+    const char *reset = colors_enabled() ? ANSI_RESET : "";
+
+    release_file = fopen("/proc/sys/kernel/osrelease", "r");
+    if (!release_file || !fgets(release, sizeof(release), release_file)) {
+        if (release_file) fclose(release_file);
+        return 0;
+    }
+    fclose(release_file);
+    if (!strstr(release, "microsoft")) return 0;
+
+    gpu_file = popen("powershell.exe -NoProfile -NonInteractive -Command \"Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name\" 2>/dev/null", "r");
+    if (!gpu_file) return 0;
+    while (fgets(line, sizeof(line), gpu_file)) {
+        char *name = trim_whitespace(line);
+        if (*name == '\0') continue;
+        printf("%sGPU%d%s    : %s | N/A\n", label_color, gpu_idx++, reset, name);
+    }
+    (void)pclose(gpu_file);
+    return gpu_idx;
+#else
+    return 0;
+#endif
+}
+
 static void print_local_ip(const char *cyan, const char *reset) {
     struct ifaddrs *interfaces;
     struct ifaddrs *interface;
@@ -853,7 +885,10 @@ void print_gpus(void) {
     return;
 #endif
     DIR *dir = opendir("/sys/class/drm");
-    if (!dir) return;
+    if (!dir) {
+        (void)print_wsl_gpus();
+        return;
+    }
 
     struct dirent *entry;
     int gpu_idx = 0;
@@ -928,6 +963,7 @@ void print_gpus(void) {
         gpu_idx++;
     }
     closedir(dir);
+    if (gpu_idx == 0) (void)print_wsl_gpus();
 }
 
 static void unescape_mount_field(char *value) {
