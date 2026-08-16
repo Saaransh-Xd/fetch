@@ -32,6 +32,11 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <net/if.h>
+#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__OpenBSD__) && \
+    !defined(__NetBSD__) && !defined(__DragonFly__)
+#include <dlfcn.h>
+#include <wchar.h>
+#endif
 
 #include "ansi.h"
 #include "../larp/embedded.h"
@@ -530,6 +535,99 @@ static int get_lspci_name(const char *card_name, char *name, size_t name_size) {
 
 static int print_wsl_gpus(void) {
 #if !SFETCH_MACOS && !SFETCH_BSD
+    typedef struct { uint32_t data1; uint16_t data2, data3; unsigned char data4[8]; } WslGuid;
+    typedef struct WslUnknown WslUnknown;
+    typedef struct {
+        WslUnknown *(*query_interface)(WslUnknown *, const WslGuid *, void **);
+        unsigned long (*add_ref)(WslUnknown *);
+        unsigned long (*release)(WslUnknown *);
+    } WslUnknownVtbl;
+    struct WslUnknown { WslUnknownVtbl *vtable; };
+    typedef struct {
+        WslUnknownVtbl unknown;
+        int (*create_adapter_list)(void *, uint32_t, const WslGuid *, const WslGuid *, void **);
+    } WslFactoryVtbl;
+    typedef struct {
+        WslUnknownVtbl unknown;
+        int (*get_adapter)(void *, uint32_t, const WslGuid *, void **);
+        uint32_t (*get_adapter_count)(void *);
+    } WslListVtbl;
+    typedef struct {
+        WslUnknownVtbl unknown;
+        unsigned char *reserved[3];
+        int (*get_property)(void *, uint32_t, size_t, void *);
+        int (*get_property_size)(void *, uint32_t, size_t *);
+    } WslAdapterVtbl;
+    typedef int (*create_factory_fn)(const WslGuid *, void **);
+    static const WslGuid factory_iid = {0x78ee5945, 0xc36e, 0x4b13,
+        {0xa6, 0x69, 0x00, 0x5d, 0xd1, 0x1c, 0x0f, 0x06}};
+    static const WslGuid list_iid = {0x526c7776, 0x40e9, 0x459b,
+        {0xb7, 0x11, 0xf3, 0x2a, 0xd7, 0x6d, 0xfc, 0x28}};
+    static const WslGuid adapter_iid = {0xf0db4c7f, 0xfe5a, 0x42a2,
+        {0xbd, 0x62, 0xf2, 0xa6, 0xcf, 0x6f, 0xc8, 0x3e}};
+    static const WslGuid d3d12_graphics = {0x8c47866b, 0x7583, 0x450d,
+        {0xf0, 0xf0, 0x6b, 0xad, 0xa8, 0x95, 0xaf, 0x4b}};
+    {
+    void *library = dlopen("/usr/lib/wsl/lib/libdxcore.so", RTLD_LAZY);
+    create_factory_fn create_factory;
+    union { void *object; create_factory_fn function; } create_factory_symbol;
+    WslUnknown *factory = NULL;
+    WslUnknown *list = NULL;
+    uint32_t gpu_idx = 0;
+    const char *label_color = colors_enabled() ? ANSI_CYAN : "";
+    const char *reset = colors_enabled() ? ANSI_RESET : "";
+
+    if (!library) return 0;
+    create_factory_symbol.object = dlsym(library, "DXCoreCreateAdapterFactory");
+    create_factory = create_factory_symbol.function;
+    if (!create_factory || create_factory(&factory_iid, (void **)&factory) != 0) {
+        dlclose(library);
+        return 0;
+    }
+    if (((WslFactoryVtbl *)factory->vtable)->create_adapter_list(factory, 1,
+            &d3d12_graphics, &list_iid, (void **)&list) != 0) {
+        factory->vtable->release(factory);
+        dlclose(library);
+        return 0;
+    }
+    {
+        uint32_t count = ((WslListVtbl *)list->vtable)->get_adapter_count(list);
+        for (uint32_t i = 0; i < count; ++i) {
+            WslUnknown *adapter = NULL;
+            char description[512] = "";
+            char name[512] = "";
+            uint64_t dedicated = 0, shared = 0;
+            unsigned char integrated = 0;
+            unsigned char hardware = 0;
+            size_t description_size = sizeof(description);
+            if (((WslListVtbl *)list->vtable)->get_adapter(list, i, &adapter_iid,
+                    (void **)&adapter) != 0 || !adapter) continue;
+            WslAdapterVtbl *adapter_vtable = (WslAdapterVtbl *)adapter->vtable;
+            (void)adapter_vtable->get_property(adapter, 2, description_size, description);
+            (void)adapter_vtable->get_property(adapter, 7, sizeof(dedicated), &dedicated);
+            (void)adapter_vtable->get_property(adapter, 9, sizeof(shared), &shared);
+            (void)adapter_vtable->get_property(adapter, 12, sizeof(integrated), &integrated);
+            (void)adapter_vtable->get_property(adapter, 11, sizeof(hardware), &hardware);
+            snprintf(name, sizeof(name), "%s", description);
+            if (name[0] != '\0') {
+                const uint64_t memory = dedicated > 0 ? dedicated : shared;
+                const char *kind = integrated ? "Integrated" : "Discrete";
+                if (memory >= 1024ULL * 1024ULL * 1024ULL)
+                    printf("%sGPU%u%s    : %s (%.2f GiB) [%s]\n", label_color,
+                           gpu_idx++, reset, name, (double)memory / (1024.0 * 1024.0 * 1024.0), kind);
+                else
+                    printf("%sGPU%u%s    : %s (%.2f MiB) [%s]\n", label_color,
+                           gpu_idx++, reset, name, (double)memory / (1024.0 * 1024.0), kind);
+            }
+            adapter->vtable->release(adapter);
+        }
+    }
+    list->vtable->release(list);
+    factory->vtable->release(factory);
+    dlclose(library);
+    if (gpu_idx > 0) return (int)gpu_idx;
+    }
+
     FILE *gpu_file;
     char line[512];
     int gpu_idx = 0;
