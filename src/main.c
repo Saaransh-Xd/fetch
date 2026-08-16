@@ -32,6 +32,15 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <net/if.h>
+#if defined(__linux__)
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <drm/drm.h>
+#include <drm/drm_mode.h>
+#ifndef DRM_MODE_CONNECTED
+#define DRM_MODE_CONNECTED 1
+#endif
+#endif
 #if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__OpenBSD__) && \
     !defined(__NetBSD__) && !defined(__DragonFly__)
 #include <dlfcn.h>
@@ -699,12 +708,95 @@ static void print_display_info(const char *cyan, const char *reset) {
     sfetch_macos_print_display(cyan, reset);
     return;
 #endif
-    FILE *display_command = popen("xrandr --current 2>/dev/null", "r");
+#if defined(__linux__)
+    int printed = 0;
+    for (int card = 0; card < 16; ++card) {
+        char path[64];
+        int fd;
+        struct drm_mode_card_res resources = {0};
+        uint32_t *connectors = NULL;
+        snprintf(path, sizeof(path), "/dev/dri/card%d", card);
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) continue;
+        if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &resources) != 0 ||
+            resources.count_connectors == 0) {
+            close(fd);
+            continue;
+        }
+        connectors = calloc(resources.count_connectors, sizeof(*connectors));
+        if (!connectors) { close(fd); continue; }
+        resources.connector_id_ptr = (uintptr_t)connectors;
+        if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &resources) != 0) {
+            free(connectors);
+            close(fd);
+            continue;
+        }
+        for (uint32_t i = 0; i < resources.count_connectors; ++i) {
+            struct drm_mode_get_connector connector = {0};
+            struct drm_mode_modeinfo *modes = NULL;
+            struct drm_mode_get_encoder encoder = {0};
+            struct drm_mode_crtc crtc = {0};
+            uint32_t crtc_id = 0;
+            int width = 0, height = 0;
+            double refresh = 0.0;
+            connector.connector_id = connectors[i];
+            if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) != 0 ||
+                connector.connection != DRM_MODE_CONNECTED || connector.count_modes == 0)
+                continue;
+            modes = calloc(connector.count_modes, sizeof(*modes));
+            if (!modes) continue;
+            connector.modes_ptr = (uintptr_t)modes;
+            if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) != 0) {
+                free(modes);
+                continue;
+            }
+            if (connector.encoder_id != 0) {
+                encoder.encoder_id = connector.encoder_id;
+                if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) == 0)
+                    crtc_id = encoder.crtc_id;
+            }
+            if (crtc_id != 0) {
+                crtc.crtc_id = crtc_id;
+                if (ioctl(fd, DRM_IOCTL_MODE_GETCRTC, &crtc) == 0 && crtc.mode_valid) {
+                    width = (int)crtc.mode.hdisplay;
+                    height = (int)crtc.mode.vdisplay;
+                    refresh = crtc.mode.vrefresh;
+                }
+            }
+            if (width == 0) {
+                for (uint32_t mode = 0; mode < connector.count_modes; ++mode) {
+                    if ((modes[mode].type & DRM_MODE_TYPE_PREFERRED) != 0 || mode == 0) {
+                        width = (int)modes[mode].hdisplay;
+                        height = (int)modes[mode].vdisplay;
+                        refresh = modes[mode].vrefresh;
+                        if ((modes[mode].type & DRM_MODE_TYPE_PREFERRED) != 0) break;
+                    }
+                }
+            }
+            if (width > 0 && height > 0) {
+                const char *connector_type = "External";
+                if (connector.connector_type == DRM_MODE_CONNECTOR_eDP ||
+                    connector.connector_type == DRM_MODE_CONNECTOR_LVDS ||
+                    connector.connector_type == DRM_MODE_CONNECTOR_DSI)
+                    connector_type = "Internal";
+                printf("%sDisplay%s  : %dx%d @ %.0f Hz (%s)\n", cyan, reset,
+                       width, height, refresh, connector_type);
+                printed++;
+            }
+            free(modes);
+        }
+        free(connectors);
+        close(fd);
+    }
+    if (printed > 0) return;
+#endif
+    FILE *display_command;
     char line[512];
     int width = 0, height = 0;
     double refresh = 0.0;
     int reading_display_modes = 0;
 
+    display_command = popen("xrandr --current 2>/dev/null", "r");
     if (display_command) {
         while (fgets(line, sizeof(line), display_command)) {
             char *connected = strstr(line, " connected");
@@ -1399,7 +1491,7 @@ static void collect_display(SfetchDisplay *display) {
     sfetch_macos_get_display(display);
     return;
 #endif
-    FILE *display_command = popen("xrandr --current 2>/dev/null", "r");
+    FILE *display_command;
     char line[512];
     int width = 0, height = 0;
     double refresh = 0.0;
@@ -1409,6 +1501,72 @@ static void collect_display(SfetchDisplay *display) {
     display->height = 0;
     display->refresh_hz = 0.0;
 
+#if defined(__linux__)
+    for (int card = 0; card < 16; ++card) {
+        char path[64];
+        int fd;
+        struct drm_mode_card_res resources = {0};
+        uint32_t *connectors;
+        snprintf(path, sizeof(path), "/dev/dri/card%d", card);
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0 || ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &resources) != 0 ||
+            resources.count_connectors == 0) {
+            if (fd >= 0) close(fd);
+            continue;
+        }
+        connectors = calloc(resources.count_connectors, sizeof(*connectors));
+        if (!connectors) { close(fd); continue; }
+        resources.connector_id_ptr = (uintptr_t)connectors;
+        if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &resources) != 0) {
+            free(connectors); close(fd); continue;
+        }
+        for (uint32_t i = 0; i < resources.count_connectors; ++i) {
+            struct drm_mode_get_connector connector = { .connector_id = connectors[i] };
+            struct drm_mode_modeinfo *modes;
+            struct drm_mode_get_encoder encoder = {0};
+            struct drm_mode_crtc crtc = {0};
+            if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) != 0 ||
+                connector.connection != DRM_MODE_CONNECTED || connector.count_modes == 0)
+                continue;
+            modes = calloc(connector.count_modes, sizeof(*modes));
+            if (!modes) continue;
+            connector.modes_ptr = (uintptr_t)modes;
+            if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &connector) == 0) {
+                uint32_t crtc_id = 0;
+                if (connector.encoder_id != 0) {
+                    encoder.encoder_id = connector.encoder_id;
+                    if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &encoder) == 0)
+                        crtc_id = encoder.crtc_id;
+                }
+                if (crtc_id != 0) {
+                    crtc.crtc_id = crtc_id;
+                    if (ioctl(fd, DRM_IOCTL_MODE_GETCRTC, &crtc) == 0 && crtc.mode_valid) {
+                        display->width = (int)crtc.mode.hdisplay;
+                        display->height = (int)crtc.mode.vdisplay;
+                        display->refresh_hz = crtc.mode.vrefresh;
+                    }
+                }
+                if (display->width == 0) {
+                    for (uint32_t mode = 0; mode < connector.count_modes; ++mode) {
+                        if ((modes[mode].type & DRM_MODE_TYPE_PREFERRED) != 0 || mode == 0) {
+                            display->width = (int)modes[mode].hdisplay;
+                            display->height = (int)modes[mode].vdisplay;
+                            display->refresh_hz = modes[mode].vrefresh;
+                            if ((modes[mode].type & DRM_MODE_TYPE_PREFERRED) != 0) break;
+                        }
+                    }
+                }
+            }
+            free(modes);
+            if (display->width > 0) break;
+        }
+        free(connectors);
+        close(fd);
+        if (display->width > 0) return;
+    }
+#endif
+
+    display_command = popen("xrandr --current 2>/dev/null", "r");
     if (display_command) {
         while (fgets(line, sizeof(line), display_command)) {
             char *connected = strstr(line, " connected");
