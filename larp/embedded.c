@@ -95,6 +95,21 @@ static PyObject *make_batteries(const SfetchLarpInfo *info) {
     return list;
 }
 
+static PyObject *make_gpus(const SfetchLarpInfo *info) {
+    PyObject *list = PyList_New(0);
+    if (!list) return NULL;
+    for (int i = 0; i < info->gpu_count; ++i) {
+        PyObject *item = PyUnicode_FromString(info->gpus[i]);
+        if (!item || PyList_Append(list, item) != 0) {
+            Py_XDECREF(item);
+            Py_DECREF(list);
+            return NULL;
+        }
+        Py_DECREF(item);
+    }
+    return list;
+}
+
 static int install_larp_info(const SfetchLarpInfo *info) {
     PyObject *main_module = PyImport_AddModule("__main__");
     PyObject *dictionary = PyDict_New();
@@ -107,6 +122,7 @@ static int install_larp_info(const SfetchLarpInfo *info) {
     PyObject *display = NULL;
     PyObject *disks = NULL;
     PyObject *batteries = NULL;
+    PyObject *gpus = NULL;
     int ok = dictionary != NULL;
 
     if (!ok) return 0;
@@ -140,7 +156,8 @@ static int install_larp_info(const SfetchLarpInfo *info) {
                             "refresh_hz", info->display.refresh_hz);
     disks = make_disks(info);
     batteries = make_batteries(info);
-    ok = uptime && cpu && memory && swap && packages && display && disks && batteries &&
+    gpus = make_gpus(info);
+    ok = uptime && cpu && memory && swap && packages && display && disks && batteries && gpus &&
          set_python_string(dictionary, "user", info->user) &&
          set_python_string(dictionary, "hostname", info->hostname) &&
          set_python_string(dictionary, "os", info->os) &&
@@ -159,6 +176,7 @@ static int install_larp_info(const SfetchLarpInfo *info) {
          set_python_object(dictionary, "swap", swap) &&
          set_python_object(dictionary, "packages", packages) &&
          set_python_object(dictionary, "display", display) &&
+         set_python_object(dictionary, "gpu", gpus) &&
          set_python_object(dictionary, "disks", disks) &&
          set_python_object(dictionary, "battery", batteries) &&
          set_python_string(dictionary, "terminal", info->terminal) &&
@@ -176,6 +194,7 @@ static int install_larp_info(const SfetchLarpInfo *info) {
     Py_XDECREF(display);
     Py_XDECREF(disks);
     Py_XDECREF(batteries);
+    Py_XDECREF(gpus);
     Py_DECREF(dictionary);
     return ok;
 }

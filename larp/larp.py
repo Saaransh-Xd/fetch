@@ -123,6 +123,7 @@ def info_lines(info: dict[str, object]) -> list[str]:
         f"{CYAN}Kernel{RESET}    {info['kernel']}",
         f"{CYAN}Uptime{RESET}    {format_uptime(int(uptime['seconds']))}",
         f"{CYAN}CPU{RESET}       {cpu} ({cpu_data['cores']}){cpu_speed}{cpu_temp}",
+        *[f"{CYAN}GPU{RESET}       {gpu}" for gpu in info.get("gpu", [])],
         f"{CYAN}Memory{RESET}    {used // 1024 // 1024} MB / {total // 1024 // 1024} MB ({memory['percentage']}%)",
         f"{CYAN}Processes{RESET} {info['process_count']}",
         f"{CYAN}Shell{RESET}     {info['shell']}",

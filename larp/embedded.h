@@ -24,6 +24,8 @@ typedef struct {
     SfetchSwap swap;
     SfetchPackages packages;
     SfetchDisplay display;
+    char gpus[8][512];
+    int gpu_count;
     SfetchBattery batteries[8];
     int battery_count;
     SfetchChassis chassis;

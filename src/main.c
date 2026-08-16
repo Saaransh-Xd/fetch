@@ -1164,6 +1164,36 @@ void print_gpus(void) {
     if (gpu_idx == 0) (void)print_wsl_gpus();
 }
 
+void print_gpus(void);
+
+static int collect_gpu_lines(char gpus[][512], int max_gpus) {
+    FILE *capture;
+    int saved_stdout;
+    int count = 0;
+    char line[512];
+    if (max_gpus <= 0 || (capture = tmpfile()) == NULL) return 0;
+    fflush(stdout);
+    saved_stdout = dup(STDOUT_FILENO);
+    if (saved_stdout < 0 || dup2(fileno(capture), STDOUT_FILENO) < 0) {
+        if (saved_stdout >= 0) close(saved_stdout);
+        fclose(capture);
+        return 0;
+    }
+    print_gpus();
+    fflush(stdout);
+    dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdout);
+    rewind(capture);
+    while (count < max_gpus && fgets(line, sizeof(line), capture)) {
+        char *value = trim_whitespace(line);
+        if (strncmp(value, "GPU", 3) != 0) continue;
+        value[strcspn(value, "\r\n")] = '\0';
+        snprintf(gpus[count++], 512, "%s", value);
+    }
+    fclose(capture);
+    return count;
+}
+
 static void unescape_mount_field(char *value) {
     char *source = value;
     char *destination = value;
@@ -1997,6 +2027,7 @@ int main(int argc, char **argv)
                 SfetchLarpInfo larp_info;
                 memset(&larp_info, 0, sizeof(larp_info));
                 larp_info.disk_count = 0;
+                larp_info.gpu_count = collect_gpu_lines(larp_info.gpus, 8);
                 larp_info.battery_count = collect_battery(larp_info.batteries, 8);
                 collect_disks(larp_info.disks, &larp_info.disk_count, 16);
                 collect_chassis(&larp_info.chassis, larp_info.battery_count > 0);
