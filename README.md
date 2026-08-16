@@ -1,7 +1,7 @@
 # larpfetch
 
 > [!WARNING]
-> BSD platforms are no longer supported (it may work but mostly it would break if you want bsd support either use v0.3 or below or f̶u̶c̶k̶  fork off)
+> BSD platforms are no longer supported (it may work but mostly it would break if you want bsd support either use v0.3 or below or 𝖿̶𝗎̶𝖼̶𝗄̶ fork off)
 
 The endgame of fetch programs (larp)
 
