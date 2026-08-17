@@ -173,6 +173,13 @@ def render(info: dict[str, object], lines: list[str], angle: float, ramp: str, c
     return "\n".join(output)
 
 
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Animated CPython presentation for sfetch")
     parser.add_argument("--version", action="version", version="LARP 1.0")
@@ -182,6 +189,7 @@ def main() -> int:
     parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames")
     parser.add_argument("--infinite", action="store_true", help="spin until Ctrl-C")
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
+    parser.add_argument("--fps", type=positive_float, default=12.5, help="maximum animation frames per second")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
     parser.add_argument("--blocks", action="store_true", help="use block shading")
     parser.add_argument("--no-color", action="store_true")
@@ -206,6 +214,7 @@ def main() -> int:
     try:
         frame = 0
         while args.infinite or frames is None or frame < frames:
+            frame_start = time.monotonic()
             if color:
                 sys.stdout.write("\033[H\033[2J")
             angle = (frame / cycle_frames) * math.tau * args.speed
@@ -215,7 +224,7 @@ def main() -> int:
             frame += 1
             if not sys.stdout.isatty():
                 break
-            time.sleep(0.08)
+            time.sleep(max(0.0, (1.0 / args.fps) - (time.monotonic() - frame_start)))
     except KeyboardInterrupt:
         pass
     finally:

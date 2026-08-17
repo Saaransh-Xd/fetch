@@ -53,7 +53,7 @@ interpreter. The C program injects its collected system information into
 Python as `larpfetch_info`. LARP renders a shaded, rotating distro logo beside
 that data. It requires CPython development files when building.
 
-LARP options include `--logo NAME_OR_PATH`, `--frames N`, `--infinite`, `--speed N`, `--blocks`,
+LARP options include `--logo NAME_OR_PATH`, `--frames N`, `--infinite`, `--speed N`, `--fps N`, `--blocks`,
 `--shading-chars TEXT`, `--no-color`, `--box`, `--version`, `--eval EXPR`,
 and `--interactive`.
 
