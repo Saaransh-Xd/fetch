@@ -186,8 +186,11 @@ def main() -> int:
     parser.add_argument("--logo", metavar="NAME_OR_PATH", help="use a bundled logo name or custom logo file")
     parser.add_argument("--eval", metavar="EXPR", help="evaluate a Python expression")
     parser.add_argument("--interactive", action="store_true", help="open a Python console after rendering")
-    parser.add_argument("--frames", type=int, default=48, help="render a finite number of frames (default: 48)")
-    parser.add_argument("--infinite", action="store_true", help="spin until Ctrl-C")
+    parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames with --no-infinite")
+    infinite_group = parser.add_mutually_exclusive_group()
+    infinite_group.add_argument("--infinite", dest="infinite", action="store_true", help="spin until Ctrl-C (default)")
+    infinite_group.add_argument("--no-infinite", dest="infinite", action="store_false", help="stop after the configured number of frames")
+    parser.set_defaults(infinite=True)
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
     parser.add_argument("--fps", type=positive_float, default=12.5, help="maximum animation frames per second")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
@@ -195,6 +198,9 @@ def main() -> int:
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--box", action="store_true")
     args = parser.parse_args()
+
+    if args.infinite and args.frames is not None:
+        parser.error("--frames requires --no-infinite")
 
     info = dict(sfetch_info)
     if args.eval is not None:
@@ -208,12 +214,12 @@ def main() -> int:
         global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
         RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
-    frames = max(1, args.frames)
+    frames = max(1, args.frames) if args.frames is not None else 48
     cycle_frames = frames or 48
     logo = load_logo(str(info.get("os_id", "unknown")), args.logo)
     try:
         frame = 0
-        while args.infinite or frames is None or frame < frames:
+        while args.infinite or frame < frames:
             frame_start = time.monotonic()
             if color:
                 sys.stdout.write("\033[H\033[2J")
