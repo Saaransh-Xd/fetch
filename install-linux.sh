@@ -67,6 +67,9 @@ processes=true
 arch=true
 shell=true
 palette=true
+fps=10
+infinite=true
+frames=48
 CONFIG
     run_privileged chmod 644 /etc/larpfetch/config
 fi
