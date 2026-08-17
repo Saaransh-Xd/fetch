@@ -95,6 +95,18 @@ static PyObject *make_batteries(const SfetchLarpInfo *info) {
     return list;
 }
 
+static int set_larp_config(PyObject *dictionary, const SfetchLarpInfo *info) {
+    PyObject *config = Py_BuildValue("{s:d,s:i,s:i}",
+                                     "fps", info->larp_fps,
+                                     "infinite", info->larp_infinite,
+                                     "frames", info->larp_frames);
+    int result;
+    if (!config) return 0;
+    result = PyDict_SetItemString(dictionary, "larp_config", config) == 0;
+    Py_DECREF(config);
+    return result;
+}
+
 static PyObject *make_gpus(const SfetchLarpInfo *info) {
     PyObject *list = PyList_New(0);
     if (!list) return NULL;
@@ -181,7 +193,8 @@ static int install_larp_info(const SfetchLarpInfo *info) {
          set_python_object(dictionary, "battery", batteries) &&
          set_python_string(dictionary, "terminal", info->terminal) &&
          set_python_string(dictionary, "local_ip", info->local_ip) &&
-         set_python_string(dictionary, "chassis", info->chassis.type);
+         set_python_string(dictionary, "chassis", info->chassis.type) &&
+         set_larp_config(dictionary, info);
     if (ok) {
         globals = PyModule_GetDict(main_module);
         ok = PyDict_SetItemString(globals, "sfetch_info", dictionary) == 0;

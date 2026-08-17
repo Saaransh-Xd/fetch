@@ -181,6 +181,8 @@ def positive_float(value: str) -> float:
 
 
 def main() -> int:
+    larp_config = globals().get("larp_config", {})
+    default_infinite = bool(larp_config.get("infinite", True))
     parser = argparse.ArgumentParser(description="Animated CPython presentation for sfetch")
     parser.add_argument("--version", action="version", version="LARP 1.0")
     parser.add_argument("--logo", metavar="NAME_OR_PATH", help="use a bundled logo name or custom logo file")
@@ -190,9 +192,9 @@ def main() -> int:
     infinite_group = parser.add_mutually_exclusive_group()
     infinite_group.add_argument("--infinite", dest="infinite", action="store_true", help="spin until Ctrl-C (default)")
     infinite_group.add_argument("--no-infinite", dest="infinite", action="store_false", help="stop after the configured number of frames")
-    parser.set_defaults(infinite=True)
+    parser.set_defaults(infinite=default_infinite)
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
-    parser.add_argument("--fps", type=positive_float, default=12.5, help="maximum animation frames per second")
+    parser.add_argument("--fps", type=positive_float, default=positive_float(str(larp_config.get("fps", 12.5))), help="maximum animation frames per second")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
     parser.add_argument("--blocks", action="store_true", help="use block shading")
     parser.add_argument("--no-color", action="store_true")
@@ -214,7 +216,7 @@ def main() -> int:
         global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
         RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
-    frames = max(1, args.frames) if args.frames is not None else 48
+    frames = max(1, args.frames if args.frames is not None else int(larp_config.get("frames", 48)))
     cycle_frames = frames or 48
     logo = load_logo(str(info.get("os_id", "unknown")), args.logo)
     try:

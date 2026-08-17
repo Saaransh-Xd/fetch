@@ -28,6 +28,7 @@
 #include <sys/statvfs.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <math.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -71,6 +72,9 @@ typedef struct {
     int arch;
     int shell;
     int palette;
+    double larp_fps;
+    int larp_infinite;
+    int larp_frames;
 } SfetchConfig;
 
 static char *trim_whitespace(char *value) {
@@ -184,6 +188,9 @@ static void get_bsd_memory(uint64_t *total, uint64_t *available) {
 
 static void set_config_value(SfetchConfig *config, const char *key, const char *value) {
     int enabled = parse_toggle(value);
+    char *end;
+    double number;
+    long frames;
     if (strcmp(key, "logo") == 0) config->logo = enabled;
     else if (strcmp(key, "header") == 0) config->header = enabled;
     else if (strcmp(key, "os") == 0) config->os = enabled;
@@ -204,6 +211,16 @@ static void set_config_value(SfetchConfig *config, const char *key, const char *
     else if (strcmp(key, "arch") == 0) config->arch = enabled;
     else if (strcmp(key, "shell") == 0) config->shell = enabled;
     else if (strcmp(key, "palette") == 0) config->palette = enabled;
+    else if (strcmp(key, "infinite") == 0) config->larp_infinite = enabled;
+    else if (strcmp(key, "fps") == 0) {
+        number = strtod(value, &end);
+        if (*value != '\0' && *trim_whitespace(end) == '\0' && isfinite(number) && number > 0)
+            config->larp_fps = number;
+    } else if (strcmp(key, "frames") == 0) {
+        frames = strtol(value, &end, 10);
+        if (*value != '\0' && *trim_whitespace(end) == '\0' && frames > 0 && frames <= INT_MAX)
+            config->larp_frames = (int)frames;
+    }
 }
 
 static void load_config(SfetchConfig *config) {
@@ -215,7 +232,8 @@ static void load_config(SfetchConfig *config) {
         .cpu = 1, .gpu = 1, .memory = 1, .disks = 1, .swap = 1,
         .packages = 1, .terminal = 1, .local_ip = 1, .display = 1,
         .battery = 1, .chassis = 1, .processes = 1, .arch = 1,
-        .shell = 1, .palette = 1
+        .shell = 1, .palette = 1, .larp_fps = 12.5, .larp_infinite = 1,
+        .larp_frames = 48
     };
 
     (void)mkdir("/etc/sfetch", 0755);
@@ -229,6 +247,7 @@ static void load_config(SfetchConfig *config) {
             fputs("packages=true\nterminal=true\nlocal_ip=true\ndisplay=true\n", file);
             fputs("battery=true\nchassis=true\nprocesses=true\narch=true\nshell=true\n", file);
             fputs("palette=true\n", file);
+            fputs("fps=12.5\ninfinite=true\nframes=48\n", file);
             fclose(file);
             file = fopen("/etc/sfetch/config", "r");
         }
@@ -2056,6 +2075,9 @@ int main(int argc, char **argv)
                     char os_id[64];
                     get_os_id(os_id, sizeof(os_id));
                     larp_info.os_id = os_id;
+                    larp_info.larp_fps = config.larp_fps;
+                    larp_info.larp_infinite = config.larp_infinite;
+                    larp_info.larp_frames = config.larp_frames;
                     return sfetch_run_larp(argc, argv, &larp_info);
                 }
             }

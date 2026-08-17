@@ -31,6 +31,9 @@ typedef struct {
     SfetchChassis chassis;
     char terminal[128];
     char local_ip[512];
+    double larp_fps;
+    int larp_infinite;
+    int larp_frames;
 } SfetchLarpInfo;
 
 int sfetch_run_larp(int argc, char **argv, const SfetchLarpInfo *info);
