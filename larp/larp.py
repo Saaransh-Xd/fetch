@@ -186,7 +186,7 @@ def main() -> int:
     parser.add_argument("--logo", metavar="NAME_OR_PATH", help="use a bundled logo name or custom logo file")
     parser.add_argument("--eval", metavar="EXPR", help="evaluate a Python expression")
     parser.add_argument("--interactive", action="store_true", help="open a Python console after rendering")
-    parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames")
+    parser.add_argument("--frames", type=int, default=48, help="render a finite number of frames (default: 48)")
     parser.add_argument("--infinite", action="store_true", help="spin until Ctrl-C")
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
     parser.add_argument("--fps", type=positive_float, default=12.5, help="maximum animation frames per second")
@@ -208,7 +208,7 @@ def main() -> int:
         global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
         RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
-    frames = max(1, args.frames) if args.frames is not None else None
+    frames = max(1, args.frames)
     cycle_frames = frames or 48
     logo = load_logo(str(info.get("os_id", "unknown")), args.logo)
     try:
