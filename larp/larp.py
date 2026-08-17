@@ -180,6 +180,16 @@ def positive_float(value: str) -> float:
     return parsed
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer greater than zero") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def main() -> int:
     larp_config = globals().get("larp_config", {})
     default_infinite = bool(larp_config.get("infinite", True))
@@ -188,11 +198,14 @@ def main() -> int:
     parser.add_argument("--logo", metavar="NAME_OR_PATH", help="use a bundled logo name or custom logo file")
     parser.add_argument("--eval", metavar="EXPR", help="evaluate a Python expression")
     parser.add_argument("--interactive", action="store_true", help="open a Python console after rendering")
-    parser.add_argument("--frames", type=int, default=None, help="render a finite number of frames with --no-infinite")
+    parser.add_argument("--frames", type=positive_int, default=None, help="render a finite number of frames")
     infinite_group = parser.add_mutually_exclusive_group()
     infinite_group.add_argument("--infinite", dest="infinite", action="store_true", help="spin until Ctrl-C (default)")
     infinite_group.add_argument("--no-infinite", dest="infinite", action="store_false", help="stop after the configured number of frames")
-    parser.set_defaults(infinite=default_infinite)
+    # Keep None here so we can distinguish an omitted switch from an explicit
+    # --infinite. This lets --frames imply finite mode without overriding an
+    # explicit contradictory request.
+    parser.set_defaults(infinite=None)
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
     parser.add_argument("--fps", type=positive_float, default=positive_float(str(larp_config.get("fps", 10.0))), help="maximum animation frames per second")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
@@ -202,7 +215,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.infinite and args.frames is not None:
-        parser.error("--frames requires --no-infinite")
+        parser.error("--frames cannot be used with --infinite")
+    if args.frames is not None:
+        args.infinite = False
+    elif args.infinite is None:
+        args.infinite = default_infinite
 
     info = dict(sfetch_info)
     if args.eval is not None:
@@ -216,7 +233,7 @@ def main() -> int:
         global RESET, DIM, RED, BLUE, CYAN, GREEN, YELLOW, MAGENTA, WHITE, BRIGHT_CYAN, BRIGHT_WHITE
         RESET = DIM = RED = BLUE = CYAN = GREEN = YELLOW = MAGENTA = WHITE = BRIGHT_CYAN = BRIGHT_WHITE = ""
 
-    frames = max(1, args.frames if args.frames is not None else int(larp_config.get("frames", 48)))
+    frames = args.frames if args.frames is not None else max(1, int(larp_config.get("frames", 48)))
     cycle_frames = frames or 48
     logo = load_logo(str(info.get("os_id", "unknown")), args.logo)
     try:
@@ -230,7 +247,9 @@ def main() -> int:
             sys.stdout.write("\n")
             sys.stdout.flush()
             frame += 1
-            if not sys.stdout.isatty():
+            # Avoid hanging when infinite output is piped, but honor the
+            # requested finite frame count regardless of the output device.
+            if args.infinite and not sys.stdout.isatty():
                 break
             time.sleep(max(0.0, (1.0 / args.fps) - (time.monotonic() - frame_start)))
     except KeyboardInterrupt:

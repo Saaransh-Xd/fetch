@@ -53,13 +53,14 @@ interpreter. The C program injects its collected system information into
 Python as `larpfetch_info`. LARP renders a shaded, rotating distro logo beside
 that data. It requires CPython development files when building.
 
-LARP options include `--logo NAME_OR_PATH`, `--infinite` (default), `--no-infinite`, `--frames N`, `--speed N`, `--fps N`, `--blocks`,
+LARP options include `--logo NAME_OR_PATH`, `--infinite` (default), `--no-infinite`, `--frames N` (finite mode), `--speed N`, `--fps N`, `--blocks`,
 `--shading-chars TEXT`, `--no-color`, `--box`, `--version`, `--eval EXPR`,
 and `--interactive`.
 
 The LARP settings can also be configured in `/etc/sfetch/config`:
 `fps=10`, `infinite=true`, and `frames=48`. `frames` is used when
-`infinite=false`; command-line options override the config values.
+`infinite=false`; passing `--frames N` also selects finite mode and overrides
+the configured frame count.
 
 `--json` prints the collected system information as JSON instead of the
 stylized side-by-side output, suitable for scripting:
