@@ -232,7 +232,7 @@ static void load_config(SfetchConfig *config) {
         .cpu = 1, .gpu = 1, .memory = 1, .disks = 1, .swap = 1,
         .packages = 1, .terminal = 1, .local_ip = 1, .display = 1,
         .battery = 1, .chassis = 1, .processes = 1, .arch = 1,
-        .shell = 1, .palette = 1, .larp_fps = 12.5, .larp_infinite = 1,
+        .shell = 1, .palette = 1, .larp_fps = 10.0, .larp_infinite = 1,
         .larp_frames = 48
     };
 
@@ -247,7 +247,7 @@ static void load_config(SfetchConfig *config) {
             fputs("packages=true\nterminal=true\nlocal_ip=true\ndisplay=true\n", file);
             fputs("battery=true\nchassis=true\nprocesses=true\narch=true\nshell=true\n", file);
             fputs("palette=true\n", file);
-            fputs("fps=12.5\ninfinite=true\nframes=48\n", file);
+            fputs("fps=10\ninfinite=true\nframes=48\n", file);
             fclose(file);
             file = fopen("/etc/sfetch/config", "r");
         }

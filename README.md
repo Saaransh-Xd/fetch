@@ -58,7 +58,7 @@ LARP options include `--logo NAME_OR_PATH`, `--infinite` (default), `--no-infini
 and `--interactive`.
 
 The LARP settings can also be configured in `/etc/sfetch/config`:
-`fps=12.5`, `infinite=true`, and `frames=48`. `frames` is used when
+`fps=10`, `infinite=true`, and `frames=48`. `frames` is used when
 `infinite=false`; command-line options override the config values.
 
 `--json` prints the collected system information as JSON instead of the

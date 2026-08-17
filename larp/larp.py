@@ -194,7 +194,7 @@ def main() -> int:
     infinite_group.add_argument("--no-infinite", dest="infinite", action="store_false", help="stop after the configured number of frames")
     parser.set_defaults(infinite=default_infinite)
     parser.add_argument("--speed", type=float, default=1.0, help="rotation speed")
-    parser.add_argument("--fps", type=positive_float, default=positive_float(str(larp_config.get("fps", 12.5))), help="maximum animation frames per second")
+    parser.add_argument("--fps", type=positive_float, default=positive_float(str(larp_config.get("fps", 10.0))), help="maximum animation frames per second")
     parser.add_argument("--shading-chars", default=RAMP, help="brightness ramp")
     parser.add_argument("--blocks", action="store_true", help="use block shading")
     parser.add_argument("--no-color", action="store_true")
