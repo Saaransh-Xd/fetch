@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VERSION="${SFETCH_VERSION:-v0.4}"
+VERSION="${SFETCH_VERSION:-v0.5}"
 REPOSITORY="${SFETCH_REPOSITORY:-Saaransh-Xd/larpfetch}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/larpfetch-install.$$"
 RELEASE_ASSET="sfetch-x86_amd64-linux"
