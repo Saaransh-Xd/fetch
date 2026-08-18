@@ -2,10 +2,12 @@
 
 set -euo pipefail
 
-VERSION="${larpfetch_VERSION:-v0.4}"
+echo -e "\e[31mBSD PLATFORMS ARE NO LONGER SUPPORTED ONLY v3.0 AND BELOW WOULD BE SUPPORTED\e[0m"
+
+VERSION="${larpfetch_VERSION:-v0.3}"
 REPOSITORY="${larpfetch_REPOSITORY:-Saaransh-Xd/larpfetch}"
 INSTALL_ROOT="${TMPDIR:-/tmp}/larpfetch-install.$$"
-RELEASE_ASSET="larpfetch-x86_amd64-bsd"
+RELEASE_ASSET="sfetch-x86_amd64-bsd"
 
 cleanup() { rm -rf "$INSTALL_ROOT"; }
 trap cleanup EXIT
